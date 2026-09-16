@@ -1,0 +1,39 @@
+Reunión de toma de requisitos — Panadería artesanal "Forn de la Plaça" — 15/09/2026
+
+Asistentes: Núria (propietaria), Jordi (encargado del obrador), Ana (consultora), Pablo (tech lead).
+
+Núria: Somos una panadería artesanal con una tienda en Girona. Cada vez más clientes nos piden por WhatsApp y por Instagram, y lo apuntamos a mano en una libreta. Queremos una tienda online propia para que la gente pida y recoja en tienda o se lo llevemos a casa.
+
+Ana: ¿Qué vendéis y cuántos productos hay?
+
+Núria: Unos 60 productos: panes, bollería, pasteles por encargo y algunos productos de temporada. Algunos tienen variantes, por ejemplo el pan de payés en 500 g y 1 kg, y las tartas por número de raciones.
+
+Jordi: Lo importante es el stock diario. Cada día hacemos una cantidad limitada de cada cosa. Cuando se acaban las 30 barras de espelta, no se pueden pedir más para ese día. Y los pasteles por encargo necesitan 48 horas de antelación.
+
+Ana: ¿Cómo sería la entrega?
+
+Núria: Recogida en tienda en franjas de media hora, de 8:00 a 14:00 y de 17:00 a 20:00. Y reparto a domicilio en un radio de 5 km con una tarifa fija de 3 €, gratis a partir de 25 €. El reparto lo hace nuestro chico con la furgoneta, solo por las mañanas.
+
+Pablo: ¿Pagos?
+
+Núria: Tarjeta y Bizum. Usamos Stripe en la web antigua, que ya no funciona. También queremos que los clientes puedan crear cuenta y repetir su pedido habitual; hay mucha gente que pide lo mismo cada semana. Nos gustaría que pudieran programar un pedido recurrente semanal.
+
+Jordi: Para nosotros lo clave es un panel en el obrador: cada mañana a las 6 quiero ver la lista de producción del día ordenada por producto, con las cantidades sumadas de todos los pedidos, y poder imprimirla. Y marcar los pedidos como preparados y entregados.
+
+Ana: ¿Notificaciones?
+
+Núria: Email de confirmación y un aviso cuando el pedido esté listo. Con email basta para empezar; WhatsApp sería un plus.
+
+Pablo: ¿Tenéis diseño? ¿Integraciones con el TPV o con contabilidad?
+
+Núria: Tenemos logo, fotos profesionales de los productos y una guía de marca. No tenemos diseño de la web. El TPV es un Square básico, no hace falta integrarlo por ahora. La contabilidad la lleva una gestoría; solo necesitamos exportar las ventas del mes a Excel.
+
+Ana: ¿Idiomas, plazos y presupuesto?
+
+Núria: Catalán y castellano. Nos gustaría tenerlo antes de la campaña de Navidad, en unas 8 semanas. El presupuesto máximo son 12.000 €. No tenemos hosting ni dominio nuevo; hay que contratarlo todo.
+
+Pablo: ¿Volumen esperado?
+
+Núria: Ahora unos 40 pedidos al día por WhatsApp; en Navidad puede subir a 150. Nada masivo.
+
+Ana: Perfecto, con esto preparamos la estimación.

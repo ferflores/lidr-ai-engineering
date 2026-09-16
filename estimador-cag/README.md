@@ -40,8 +40,10 @@ estimador-cag/
 ├── tests/                      # pytest: API, inyección de contexto y proveedores (LLM simulado)
 ├── scripts/
 │   ├── estimar.sh              # envía una transcripción al endpoint con curl
+│   ├── generar-json.sh         # crea transcripciones/*.json a partir de los .txt
 │   └── verificar.sh            # estructura + tests + arranque real (lo usa el CI)
 ├── transcripciones/            # transcripciones de ejemplo (.txt legible, .json listo para curl)
+├── docs/                       # comparativa de resultados (transcripción pobre vs. detallada)
 ├── Dockerfile                  # imagen basada en uv + Python 3.11
 ├── docker-compose.yml          # arranque con Docker, lee .env sin copiarlo a la imagen
 ├── .dockerignore
@@ -159,6 +161,65 @@ Respuesta:
 ```
 
 Códigos de respuesta: `200` estimación generada · `422` body inválido · `500` falta la API key · `502` el proveedor ha fallado.
+
+## Comparar una transcripción pobre con una detallada
+
+La calidad de la estimación depende directamente de la calidad de la transcripción. Para verlo hay dos
+transcripciones del **mismo proyecto**, una tienda online para una panadería artesanal:
+
+| Archivo | Qué contiene |
+|---|---|
+| `transcripciones/panaderia-descripcion-pobre.json` | Tres frases vagas: quiere vender por internet, que esté lista pronto y que no sea cara. |
+| `transcripciones/panaderia-descripcion-detallada.json` | Reunión completa: catálogo, stock diario, franjas de recogida, reparto, pagos, pedidos recurrentes, panel del obrador, idiomas, plazo y presupuesto. |
+
+```bash
+# 1) Levantar la app con Docker
+cd estimador-cag
+docker compose up --build -d
+curl http://localhost:8000/health
+
+# 2) Transcripción pobre
+curl -s -X POST http://localhost:8000/api/v1/estimate \
+  -H "Content-Type: application/json" \
+  -d @transcripciones/panaderia-descripcion-pobre.json \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["estimation"]); print(d["usage"])'
+
+# 3) Transcripción detallada
+curl -s -X POST http://localhost:8000/api/v1/estimate \
+  -H "Content-Type: application/json" \
+  -d @transcripciones/panaderia-descripcion-detallada.json \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["estimation"]); print(d["usage"])'
+
+# 4) Parar
+docker compose down
+```
+
+El `| python3 ...` solo imprime la estimación legible; sin él se ve el JSON completo.
+
+Resultado obtenido el 2026-09-16 con `gpt-4o-mini` y temperatura 0.2. Salida completa y análisis en
+[`docs/comparativa-pobre-vs-detallada.md`](docs/comparativa-pobre-vs-detallada.md).
+
+| | Pobre | Detallada |
+|---|---|---|
+| Caracteres de entrada | 173 | 2.672 |
+| Tokens (entrada / salida) | 1.929 / 341 | 2.581 / 431 |
+| Tareas | 7 genéricas | 10 específicas (pedidos recurrentes, panel del obrador, notificaciones, hosting) |
+| Total | 230 h · 11.500 € · 6-8 semanas | 410 h · 20.500 € · 10-12 semanas |
+| Supuestos | rellenan lo que no se dijo | recogen lo que sí se dijo (sin TPV ni contabilidad) |
+| Preguntas | básicas (métodos de pago, registro) | concretas (lista de producción, exportación a Excel) |
+
+Qué observar:
+
+- Con la transcripción pobre el modelo inventa un alcance estándar y lo estima: la cifra parece
+  razonable, pero no describe el proyecto real.
+- Con la detallada el desglose refleja lo hablado, pero todavía se deja cosas: no avisa de que supera el
+  presupuesto de 12.000 € y el plazo de 8 semanas, y omite el reparto por radio, el bilingüismo, Bizum y
+  la exportación a Excel. Es el punto de partida para iterar el prompt en la sesión en vivo.
+
+Para añadir un caso nuevo: escribe la transcripción en `transcripciones/<nombre>.txt`, ejecuta
+`scripts/generar-json.sh` para crear el `.json` equivalente, lánzalo con curl o con
+`scripts/estimar.sh transcripciones/<nombre>.json`, y anota el resultado en
+`docs/comparativa-pobre-vs-detallada.md`.
 
 ## Tests y verificación automática
 
