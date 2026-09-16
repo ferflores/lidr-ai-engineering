@@ -41,16 +41,20 @@ estimador-cag/
 ├── scripts/
 │   ├── estimar.sh              # envía una transcripción al endpoint con curl
 │   └── verificar.sh            # estructura + tests + arranque real (lo usa el CI)
-├── transcripciones/            # transcripciones de ejemplo para probar el endpoint
+├── transcripciones/            # transcripciones de ejemplo (.txt legible, .json listo para curl)
+├── Dockerfile                  # imagen basada en uv + Python 3.11
+├── docker-compose.yml          # arranque con Docker, lee .env sin copiarlo a la imagen
+├── .dockerignore
 ├── .env.example                # variables necesarias (sin valores)
-├── .env                        # tus valores reales (ignorado por git)
+├── .env                        # tus valores reales (ignorado por git y por docker)
 ├── pyproject.toml / uv.lock
 └── README.md
 ```
 
 ## Requisitos
 
-- [uv](https://docs.astral.sh/uv/) (instala solo el Python 3.11 fijado en `.python-version`).
+- [uv](https://docs.astral.sh/uv/) (instala solo el Python 3.11 fijado en `.python-version`), o bien
+  [Docker Desktop](https://www.docker.com/get-started) para ejecutarlo en contenedor.
 - Una API key de [OpenAI](https://platform.openai.com/) o de [Anthropic](https://console.anthropic.com/).
 
 ## Puesta en marcha
@@ -64,6 +68,41 @@ uv run uvicorn app.main:app --reload     # http://localhost:8000
 
 - Swagger UI: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/health>
+
+## Ejecutar con Docker
+
+```bash
+cp .env.example .env                 # rellena la API key (solo la primera vez)
+docker compose up --build -d         # construye la imagen y arranca en http://localhost:8000
+docker compose logs -f api           # ver los logs
+docker compose down                  # parar
+```
+
+Lanzar estimaciones por curl contra el contenedor:
+
+```bash
+curl http://localhost:8000/health
+
+curl -X POST http://localhost:8000/api/v1/estimate \
+  -H "Content-Type: application/json" \
+  -d @transcripciones/reunion-landing-page.json
+
+curl -X POST http://localhost:8000/api/v1/estimate \
+  -H "Content-Type: application/json" \
+  -d @transcripciones/reunion-app-reservas-restaurante.json
+```
+
+Para desarrollar sobre el contenedor, `docker compose watch` sincroniza `app/` y reinicia el servicio
+al guardar; si cambian `pyproject.toml` o `uv.lock`, reconstruye la imagen.
+
+Cómo está montado:
+
+- La imagen parte de `ghcr.io/astral-sh/uv:python3.11-bookworm-slim` e instala las dependencias con
+  `uv sync --frozen --no-dev` en una capa aparte, así solo se reinstalan si cambia `uv.lock`.
+- El `.env` **no se copia a la imagen** (está en `.dockerignore`): `docker compose` lo inyecta como
+  variables de entorno al arrancar. Sin `.env` el servicio arranca igualmente, pero el endpoint de
+  estimación responde `500` hasta que se configure la API key.
+- El contenedor corre con un usuario sin privilegios y tiene un `HEALTHCHECK` sobre `/health`.
 
 ## Variables de entorno
 
@@ -82,14 +121,22 @@ Las API keys solo viven en `.env`, que está en `.gitignore`. Nunca aparecen en 
 
 ## Probar el endpoint
 
-Con el script (usa `transcripciones/reunion-landing-page.txt` por defecto):
+Con el script (usa `transcripciones/reunion-landing-page.json` por defecto; acepta `.json` o `.txt`):
 
 ```bash
 scripts/estimar.sh
-scripts/estimar.sh transcripciones/reunion-app-reservas-restaurante.txt
+scripts/estimar.sh transcripciones/reunion-app-reservas-restaurante.json
 ```
 
-Con curl:
+Con curl y un cuerpo ya preparado:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/estimate \
+  -H "Content-Type: application/json" \
+  -d @transcripciones/reunion-landing-page.json
+```
+
+Con curl y el texto inline:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/estimate \
@@ -130,7 +177,8 @@ scripts/verificar.sh      # estructura + tests + arranque real + llamada real si
 4. Si hay API key configurada, que `POST /api/v1/estimate` devuelve una estimación real.
 
 El mismo script lo ejecuta el pipeline de GitHub Actions (`.github/workflows/estimador-cag.yml`, en la raíz
-del repositorio) en cada push que toque `estimador-cag/`. Si se configuran los secrets `OPENAI_API_KEY` o
+del repositorio) en cada push que toque `estimador-cag/`. Un segundo job construye la imagen Docker, la
+arranca con `docker compose` y comprueba `/health`. Si se configuran los secrets `OPENAI_API_KEY` o
 `ANTHROPIC_API_KEY` en el repositorio, el pipeline también hace la llamada real al LLM.
 
 ## Checklist del ejercicio
@@ -156,6 +204,9 @@ del repositorio) en cada push que toque `estimador-cag/`. Si se configuran los s
 - **Errores traducidos a HTTP**: falta de configuración → `500`; error del proveedor (auth, cuota, red,
   respuesta vacía, rechazo) → `502`. Los detalles llegan en el campo `detail`.
 - **Campos extra en la respuesta**: `usage` (tokens) y `generated_at`, útiles para medir coste y depurar.
+- **Docker opcional**: el ejercicio no lo pide, pero el stack del curso corre en contenedores. El
+  `Dockerfile` y el `docker-compose.yml` no cambian nada del código: la misma app corre con `uv run` o
+  en contenedor.
 
 ## Próximos pasos (sesión en vivo)
 

@@ -60,7 +60,7 @@ echo "== 4/4 Llamada real al LLM =="
 if [ "${SKIP_LLM:-0}" = "1" ]; then
   echo "  ⏭  omitida (SKIP_LLM=1)"
 elif echo "$HEALTH" | grep -q '"llm_configured":true'; then
-  RESPUESTA=$(scripts/estimar.sh transcripciones/reunion-landing-page.txt "$BASE_URL")
+  RESPUESTA=$(scripts/estimar.sh transcripciones/reunion-landing-page.json "$BASE_URL")
   if echo "$RESPUESTA" | grep -q '"estimation"'; then
     ok "el endpoint devolvió una estimación real"
     RESPUESTA="$RESPUESTA" uv run python - <<'PY'

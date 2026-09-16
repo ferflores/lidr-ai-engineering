@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    image: estimador-cag:latest
+    container_name: estimador-cag
+    # Configuración y API keys: se leen de .env en el arranque, nunca se copian a la imagen.
+    env_file:
+      - path: .env
+        required: false   # sin .env el servicio arranca, pero /api/v1/estimate responde 500 hasta configurar la key
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    # Desarrollo: `docker compose watch` sincroniza app/ al contenedor y lo reinicia al guardar;
+    # si cambian las dependencias, reconstruye la imagen.
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./app
+          target: /app/app
+        - action: rebuild
+          path: ./uv.lock
+        - action: rebuild
+          path: ./pyproject.toml

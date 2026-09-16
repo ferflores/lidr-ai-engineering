@@ -1,0 +1,21 @@
+# Secretos: nunca dentro de la imagen (llegan por env_file en docker compose)
+.env
+.env.*
+!.env.example
+
+# Entorno local y cachés
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.git
+
+# No hace falta en la imagen
+tests
+scripts
+transcripciones
+Dockerfile
+docker-compose.yml
+.dockerignore
+.gitignore
