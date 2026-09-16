@@ -63,7 +63,14 @@ elif echo "$HEALTH" | grep -q '"llm_configured":true'; then
   RESPUESTA=$(scripts/estimar.sh transcripciones/reunion-landing-page.txt "$BASE_URL")
   if echo "$RESPUESTA" | grep -q '"estimation"'; then
     ok "el endpoint devolvió una estimación real"
-    echo "$RESPUESTA" | uv run python -c 'import json, sys; d = json.load(sys.stdin); print(f"     modelo={d[\"model\"]} proveedor={d[\"provider\"]} tokens={d.get(\"usage\")}"); print("     " + d["estimation"].splitlines()[0])'
+    RESPUESTA="$RESPUESTA" uv run python - <<'PY'
+import json, os
+respuesta = json.loads(os.environ["RESPUESTA"])
+print(f"     modelo={respuesta['model']}  proveedor={respuesta['provider']}  tokens={respuesta.get('usage')}")
+print()
+for linea in respuesta["estimation"].splitlines():
+    print("     " + linea)
+PY
   else
     fail "el endpoint no devolvió una estimación: $RESPUESTA"
   fi
