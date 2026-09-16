@@ -113,6 +113,10 @@ def test_openai_recibe_system_con_ejemplos_y_user_con_transcripcion(monkeypatch)
     assert result.model == "gpt-4o-mini"
     assert result.estimation.startswith("## Estimación")
     assert result.usage.total_tokens == 140
+    # 100 tokens a 0.15 $/M + 40 tokens a 0.60 $/M
+    assert (result.cost.input_usd, result.cost.output_usd, result.cost.total_usd) == (0.000015, 0.000024, 0.000039)
+    assert result.prompt.transcription_chars == len(TRANSCRIPCION)
+    assert result.prompt.system_prompt_chars == len(request["messages"][0]["content"])
 
 
 # --- Anthropic ------------------------------------------------------------------------------
@@ -152,3 +156,25 @@ def test_anthropic_recibe_system_con_ejemplos_y_user_con_transcripcion(monkeypat
     assert result.model == "claude-haiku-4-5"
     assert result.estimation.startswith("## Estimación")
     assert result.usage.total_tokens == 140
+    # 100 tokens a 1 $/M + 40 tokens a 5 $/M
+    assert (result.cost.input_usd, result.cost.output_usd, result.cost.total_usd) == (0.0001, 0.0002, 0.0003)
+
+
+def test_precio_sobrescrito_desde_configuracion(monkeypatch):
+    class FakeAsyncOpenAI(_FakeAsyncClient):
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+        async def _create(self, **kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="## Estimación: X"), finish_reason="stop")],
+                usage=SimpleNamespace(prompt_tokens=1_000_000, completion_tokens=1_000_000),
+            )
+
+    monkeypatch.setattr(llm_service.openai, "AsyncOpenAI", FakeAsyncOpenAI)
+    settings = make_settings(openai_api_key="sk-test", llm_input_price_per_mtok=2.0, llm_output_price_per_mtok=8.0)
+
+    result = asyncio.run(generate_estimation(TRANSCRIPCION, settings))
+
+    assert result.cost.total_usd == 10.0
+    assert result.cost.pricing.input_per_mtok == 2.0

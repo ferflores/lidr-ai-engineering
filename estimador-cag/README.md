@@ -36,10 +36,12 @@ estimador-cag/
 │   ├── config.py               # Settings (pydantic-settings) cargados desde .env
 │   ├── routers/estimations.py  # POST /api/v1/estimate + schemas de request/response
 │   ├── services/llm_service.py # system prompt + inyección de ejemplos + llamada al LLM
+│   ├── services/pricing.py     # precios por millón de tokens y cálculo del coste de cada llamada
 │   └── context/examples.py     # estimaciones de ejemplo (el "conocimiento" del sistema)
 ├── tests/                      # pytest: API, inyección de contexto y proveedores (LLM simulado)
 ├── scripts/
 │   ├── estimar.sh              # envía una transcripción al endpoint con curl
+│   ├── comparar.py             # compara transcripciones: tokens, coste, ahorro y estimación
 │   ├── generar-json.sh         # crea transcripciones/*.json a partir de los .txt
 │   └── verificar.sh            # estructura + tests + arranque real (lo usa el CI)
 ├── transcripciones/            # transcripciones de ejemplo (.txt legible, .json listo para curl)
@@ -118,6 +120,8 @@ Cómo está montado:
 | `LLM_TEMPERATURE` | Temperatura del modelo (0-2) | `0.2` |
 | `LLM_MAX_TOKENS` | Máximo de tokens de salida | `4096` |
 | `LLM_TIMEOUT_SECONDS` | Timeout de la llamada al proveedor | `60` |
+| `LLM_INPUT_PRICE_PER_MTOK` | Precio en USD por millón de tokens de entrada (opcional, sobrescribe la tabla) | tabla de `pricing.py` |
+| `LLM_OUTPUT_PRICE_PER_MTOK` | Precio en USD por millón de tokens de salida (opcional, sobrescribe la tabla) | tabla de `pricing.py` |
 
 Las API keys solo viven en `.env`, que está en `.gitignore`. Nunca aparecen en el código.
 
@@ -155,60 +159,126 @@ Respuesta:
   "estimation": "## Estimación: Landing Page con Blog e Integración HubSpot\n\n### Resumen del alcance\n...",
   "model": "gpt-4o-mini",
   "provider": "openai",
-  "usage": { "input_tokens": 2100, "output_tokens": 620, "total_tokens": 2720 },
-  "generated_at": "2026-09-16T10:30:00.000000Z"
+  "usage": {
+    "input_tokens": 1954,
+    "output_tokens": 331,
+    "total_tokens": 2285,
+    "cost": {
+      "input_usd": 0.000293,
+      "output_usd": 0.000199,
+      "total_usd": 0.000492,
+      "input_price_per_mtok": 0.15,
+      "output_price_per_mtok": 0.6,
+      "currency": "USD"
+    }
+  },
+  "prompt": { "system_prompt_chars": 7458, "transcription_chars": 280 },
+  "generated_at": "2026-09-16T17:10:10.585676Z"
 }
 ```
 
+- `usage.input_tokens` son los tokens del system prompt (contexto CAG) más la transcripción;
+  `usage.output_tokens`, los de la estimación generada.
+- `usage.cost` es el coste de la llamada según el precio de lista del modelo (ver "Tokens y coste").
+- `prompt` da el tamaño en caracteres del contexto fijo y de la transcripción, para ver qué parte del
+  prompt es contexto y qué parte es dato.
+
 Códigos de respuesta: `200` estimación generada · `422` body inválido · `500` falta la API key · `502` el proveedor ha fallado.
+
+## Tokens y coste
+
+Cada respuesta incluye los tokens de entrada y de salida que reporta el proveedor y el coste de la llamada
+en USD, calculado con el precio de lista del modelo (`app/services/pricing.py`):
+
+| Modelo | Entrada (USD / millón de tokens) | Salida (USD / millón de tokens) |
+|---|---|---|
+| `gpt-4o-mini` | 0.15 | 0.60 |
+| `gpt-4o` | 2.50 | 10.00 |
+| `claude-haiku-4-5` | 1.00 | 5.00 |
+| `claude-sonnet-5` | 2.00 | 10.00 |
+| `claude-opus-5` | 5.00 | 25.00 |
+
+Los precios cambian: revísalos en las webs de [OpenAI](https://openai.com/api/pricing/) y
+[Anthropic](https://www.anthropic.com/pricing). Para un modelo que no esté en la tabla, o para forzar otro
+precio, define `LLM_INPUT_PRICE_PER_MTOK` y `LLM_OUTPUT_PRICE_PER_MTOK` en `.env`. Si no hay precio
+conocido, `usage.cost` viene a `null`.
+
+En arquitectura CAG el system prompt con los ejemplos viaja **en todas las llamadas**: son unos 7.500
+caracteres, alrededor de 1.900 tokens, y es la mayor parte de la entrada. La transcripción solo añade lo
+que ocupe. Por eso, si el objetivo es abaratar, lo que pesa es el contexto fijo, no lo que escriba el cliente.
 
 ## Comparar una transcripción pobre con una detallada
 
-La calidad de la estimación depende directamente de la calidad de la transcripción. Para verlo hay dos
-transcripciones del **mismo proyecto**, una tienda online para una panadería artesanal:
+La calidad de la estimación depende directamente de la calidad de la transcripción, y el coste en tokens
+apenas cambia. Para verlo hay dos transcripciones del **mismo proyecto**, una tienda online para una
+panadería artesanal:
 
 | Archivo | Qué contiene |
 |---|---|
 | `transcripciones/panaderia-descripcion-pobre.json` | Tres frases vagas: quiere vender por internet, que esté lista pronto y que no sea cara. |
 | `transcripciones/panaderia-descripcion-detallada.json` | Reunión completa: catálogo, stock diario, franjas de recogida, reparto, pagos, pedidos recurrentes, panel del obrador, idiomas, plazo y presupuesto. |
 
-```bash
-# 1) Levantar la app con Docker
-cd estimador-cag
-docker compose up --build -d
-curl http://localhost:8000/health
+### Con el script de comparación
 
-# 2) Transcripción pobre
+```bash
+cd estimador-cag
+docker compose up --build -d          # o: uv run uvicorn app.main:app --reload
+uv run scripts/comparar.py            # pobre vs. detallada por defecto
+uv run scripts/comparar.py transcripciones/a.json transcripciones/b.json   # cualquier pareja o lista
+docker compose down
+```
+
+Salida real del 2026-09-16 con `gpt-4o-mini` y temperatura 0.2:
+
+```text
+Comparativa de transcripciones · gpt-4o-mini (openai) · precios: 0.15 / 0.6 USD por millón de tokens (entrada / salida)
+
+Caso                               Caract.  Tok. entrada  Tok. salida  Tok. total   Coste USD   Estimación
+----------------------------------------------------------------------------------------------------------
+panaderia-descripcion-pobre            173         1.929          341       2.270    0.000494   225 h · 7 tareas · 2 preguntas
+panaderia-descripcion-detallada      2.672         2.581          433       3.014    0.000647   380 h · 10 tareas · 3 preguntas
+Diferencia (2ª - 1ª)                +2.499          +652          +92        +744   +0.000153   +155 h
+
+Contexto fijo (system prompt con los ejemplos CAG): 7.458 caracteres ≈ 1.884 tokens en TODAS las llamadas (98% de la entrada del 1º caso, 73% del 2º).
+Ahorro en tokens de «panaderia-descripcion-pobre» frente a «panaderia-descripcion-detallada»: 0.000153 USD por llamada (23.6%), es decir, 0.15 USD por cada 1.000 estimaciones.
+Diferencia entre las estimaciones obtenidas: 155 horas (7.750 € a 50 €/hora). Ese es el orden de magnitud de lo que está en juego frente al ahorro en tokens.
+```
+
+Lectura de los números:
+
+- **Tokens de entrada:** la detallada suma 652 tokens más (la transcripción es 15 veces más larga), pero
+  el contexto fijo de los ejemplos ya son unos 1.884 tokens en las dos. La transcripción pobre solo
+  aporta un 2 % de su entrada.
+- **Tokens de salida:** casi iguales (341 frente a 433): el formato de salida está fijado por el prompt,
+  así que la estimación ocupa lo mismo sea buena o mala.
+- **Ahorro:** la pobre cuesta 0.000153 USD menos por llamada, un 23.6 %. En 1.000 estimaciones son
+  0.15 USD. A cambio, la estimación describe un proyecto inventado y se desvía 155 horas (7.750 €) de la
+  detallada. El ahorro en tokens no compensa: la palanca de coste está en el contexto fijo y en el modelo,
+  no en recortar el requerimiento.
+- Las horas varían un poco entre ejecuciones con temperatura 0.2 (230/410 en una tirada, 225/380 en
+  otra); los tokens de entrada son idénticos porque el prompt es determinista.
+
+### A mano, con curl
+
+```bash
+# Transcripción pobre
 curl -s -X POST http://localhost:8000/api/v1/estimate \
   -H "Content-Type: application/json" \
   -d @transcripciones/panaderia-descripcion-pobre.json \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["estimation"]); print(d["usage"])'
 
-# 3) Transcripción detallada
+# Transcripción detallada
 curl -s -X POST http://localhost:8000/api/v1/estimate \
   -H "Content-Type: application/json" \
   -d @transcripciones/panaderia-descripcion-detallada.json \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["estimation"]); print(d["usage"])'
-
-# 4) Parar
-docker compose down
 ```
 
-El `| python3 ...` solo imprime la estimación legible; sin él se ve el JSON completo.
-
-Resultado obtenido el 2026-09-16 con `gpt-4o-mini` y temperatura 0.2. Salida completa y análisis en
+El `| python3 ...` solo imprime la estimación y el bloque de tokens y coste; sin él se ve el JSON completo.
+La salida completa de ambas estimaciones y el análisis de lo que el modelo acierta y omite está en
 [`docs/comparativa-pobre-vs-detallada.md`](docs/comparativa-pobre-vs-detallada.md).
 
-| | Pobre | Detallada |
-|---|---|---|
-| Caracteres de entrada | 173 | 2.672 |
-| Tokens (entrada / salida) | 1.929 / 341 | 2.581 / 431 |
-| Tareas | 7 genéricas | 10 específicas (pedidos recurrentes, panel del obrador, notificaciones, hosting) |
-| Total | 230 h · 11.500 € · 6-8 semanas | 410 h · 20.500 € · 10-12 semanas |
-| Supuestos | rellenan lo que no se dijo | recogen lo que sí se dijo (sin TPV ni contabilidad) |
-| Preguntas | básicas (métodos de pago, registro) | concretas (lista de producción, exportación a Excel) |
-
-Qué observar:
+Qué observar en el contenido:
 
 - Con la transcripción pobre el modelo inventa un alcance estándar y lo estima: la cifra parece
   razonable, pero no describe el proyecto real.
@@ -217,8 +287,8 @@ Qué observar:
   la exportación a Excel. Es el punto de partida para iterar el prompt en la sesión en vivo.
 
 Para añadir un caso nuevo: escribe la transcripción en `transcripciones/<nombre>.txt`, ejecuta
-`scripts/generar-json.sh` para crear el `.json` equivalente, lánzalo con curl o con
-`scripts/estimar.sh transcripciones/<nombre>.json`, y anota el resultado en
+`scripts/generar-json.sh` para crear el `.json` equivalente, compáralo con
+`uv run scripts/comparar.py transcripciones/<a>.json transcripciones/<b>.json`, y anota el resultado en
 `docs/comparativa-pobre-vs-detallada.md`.
 
 ## Tests y verificación automática
@@ -264,7 +334,9 @@ arranca con `docker compose` y comprueba `/health`. Si se configuran los secrets
   se envía en `extra_body`. Si se cambia a Sonnet 5 u Opus 4.7+, hay que quitarlo (esos modelos lo rechazan).
 - **Errores traducidos a HTTP**: falta de configuración → `500`; error del proveedor (auth, cuota, red,
   respuesta vacía, rechazo) → `502`. Los detalles llegan en el campo `detail`.
-- **Campos extra en la respuesta**: `usage` (tokens) y `generated_at`, útiles para medir coste y depurar.
+- **Campos extra en la respuesta**: `usage` (tokens y coste), `prompt` (tamaño del contexto fijo y de la
+  transcripción) y `generated_at`. El coste se calcula en el servidor con una tabla de precios de lista
+  para que cada llamada muestre lo que ha costado sin depender de la consola del proveedor.
 - **Docker opcional**: el ejercicio no lo pide, pero el stack del curso corre en contenedores. El
   `Dockerfile` y el `docker-compose.yml` no cambian nada del código: la misma app corre con `uv run` o
   en contenedor.

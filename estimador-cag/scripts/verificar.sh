@@ -66,7 +66,11 @@ elif echo "$HEALTH" | grep -q '"llm_configured":true'; then
     RESPUESTA="$RESPUESTA" uv run python - <<'PY'
 import json, os
 respuesta = json.loads(os.environ["RESPUESTA"])
-print(f"     modelo={respuesta['model']}  proveedor={respuesta['provider']}  tokens={respuesta.get('usage')}")
+usage = respuesta.get("usage") or {}
+cost = usage.get("cost") or {}
+coste = f"{cost['total_usd']:.6f} USD" if cost else "desconocido"
+print(f"     modelo={respuesta['model']}  proveedor={respuesta['provider']}")
+print(f"     tokens: {usage.get('input_tokens')} entrada + {usage.get('output_tokens')} salida = {usage.get('total_tokens')}  ·  coste: {coste}")
 print()
 for linea in respuesta["estimation"].splitlines():
     print("     " + linea)

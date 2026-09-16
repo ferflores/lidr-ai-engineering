@@ -3,7 +3,8 @@
 import pytest
 
 from app.routers import estimations
-from app.services.llm_service import EstimationResult, LLMProviderError, TokenUsage
+from app.services.llm_service import EstimationResult, LLMProviderError, PromptInfo, TokenUsage
+from app.services.pricing import ModelPricing, estimate_cost
 
 TRANSCRIPCION = (
     "En la reunión con el equipo de marketing, el cliente explicó que necesita una landing page "
@@ -38,6 +39,8 @@ def test_estimate_devuelve_la_estimacion(client, monkeypatch):
             model="gpt-4o-mini",
             provider="openai",
             usage=TokenUsage(input_tokens=1200, output_tokens=350),
+            cost=estimate_cost(1200, 350, ModelPricing(0.15, 0.60)),
+            prompt=PromptInfo(system_prompt_chars=6000, transcription_chars=len(transcription)),
         )
 
     monkeypatch.setattr(estimations, "generate_estimation", fake_generate_estimation)
@@ -49,7 +52,20 @@ def test_estimate_devuelve_la_estimacion(client, monkeypatch):
     assert body["estimation"].startswith("## Estimación")
     assert body["model"] == "gpt-4o-mini"
     assert body["provider"] == "openai"
-    assert body["usage"] == {"input_tokens": 1200, "output_tokens": 350, "total_tokens": 1550}
+    assert body["usage"] == {
+        "input_tokens": 1200,
+        "output_tokens": 350,
+        "total_tokens": 1550,
+        "cost": {
+            "input_usd": 0.00018,
+            "output_usd": 0.00021,
+            "total_usd": 0.00039,
+            "input_price_per_mtok": 0.15,
+            "output_price_per_mtok": 0.60,
+            "currency": "USD",
+        },
+    }
+    assert body["prompt"] == {"system_prompt_chars": 6000, "transcription_chars": len(TRANSCRIPCION)}
     assert body["generated_at"]
 
 

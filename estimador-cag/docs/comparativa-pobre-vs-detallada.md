@@ -5,13 +5,31 @@ enviadas al endpoint `POST /api/v1/estimate` el 2026-09-16 con `gpt-4o-mini`, te
 ejemplos de contexto de `app/context/examples.py`. Sirve como referencia para futuros casos y para medir
 si los cambios en el prompt o en los ejemplos mejoran el resultado.
 
-| | Pobre | Detallada |
-|---|---|---|
-| Caracteres de entrada | 173 | 2.672 |
-| Tokens (entrada / salida) | 1929 / 341 | 2581 / 431 |
-| Tareas | 7 genéricas | 10 específicas |
-| Total | 230 h · 11.500 € · 6-8 semanas | 410 h · 20.500 € · 10-12 semanas |
-| Preguntas pendientes | 2 básicas | 3 concretas |
+| | Pobre | Detallada | Diferencia |
+|---|---|---|---|
+| Caracteres de la transcripción | 173 | 2.672 | +2.499 |
+| Tokens de entrada | 1.929 | 2.581 | +652 |
+| Tokens de salida | 341 | 431 | +90 |
+| Tokens totales | 2.270 | 3.012 | +742 |
+| Coste de la llamada (gpt-4o-mini: 0.15 / 0.60 USD por millón) | 0.000494 USD | 0.000646 USD | +0.000152 USD (+31 %) |
+| Tareas | 7 genéricas | 10 específicas | +3 |
+| Total estimado | 230 h · 11.500 € · 6-8 semanas | 410 h · 20.500 € · 10-12 semanas | +180 h · +9.000 € |
+| Preguntas pendientes | 2 básicas | 3 concretas | +1 |
+
+## Tokens y coste: dónde está el ahorro
+
+- El system prompt con los ejemplos (contexto CAG) son 7.458 caracteres, unos **1.884 tokens que viajan en
+  todas las llamadas**: el 98 % de la entrada del caso pobre y el 73 % del detallado.
+- La transcripción pobre ahorra **0.000152 USD por llamada** (un 23.6 % menos que la detallada), es decir,
+  **0.15 USD por cada 1.000 estimaciones**.
+- Los tokens de salida apenas cambian (341 frente a 431) porque el formato de la estimación lo fija el
+  prompt: una estimación mala cuesta casi lo mismo de generar que una buena.
+- A cambio de ese ahorro, la estimación pobre describe un proyecto inventado y se desvía 180 horas
+  (9.000 € a 50 €/h) de la detallada. La palanca de coste real es el contexto fijo y el modelo elegido, no
+  recortar el requerimiento.
+- Reproducible con `uv run scripts/comparar.py` con el servicio levantado. Segunda tirada del mismo día:
+  tokens de entrada idénticos (el prompt es determinista), salida 341 / 433, estimaciones 225 h / 380 h
+  (con temperatura 0.2 las horas varían algo entre ejecuciones).
 
 ## Qué se observa
 

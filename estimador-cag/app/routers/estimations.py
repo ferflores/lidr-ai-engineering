@@ -37,17 +37,38 @@ class EstimationRequest(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class CostResponse(BaseModel):
+    input_usd: float = Field(description="Coste de los tokens de entrada.")
+    output_usd: float = Field(description="Coste de los tokens de salida.")
+    total_usd: float = Field(description="Coste total de la llamada.")
+    input_price_per_mtok: float = Field(description="Precio aplicado: USD por millón de tokens de entrada.")
+    output_price_per_mtok: float = Field(description="Precio aplicado: USD por millón de tokens de salida.")
+    currency: str = "USD"
+
+
 class TokenUsageResponse(BaseModel):
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int = Field(description="Tokens de entrada: system prompt (contexto CAG) + transcripción.")
+    output_tokens: int = Field(description="Tokens de salida: la estimación generada.")
     total_tokens: int
+    cost: CostResponse | None = Field(
+        default=None,
+        description="Coste según precios de lista; null si el modelo no está en la tabla de precios.",
+    )
+
+
+class PromptResponse(BaseModel):
+    system_prompt_chars: int = Field(
+        description="Tamaño del contexto fijo (instrucciones + ejemplos CAG) que viaja en todas las llamadas."
+    )
+    transcription_chars: int = Field(description="Tamaño de la transcripción enviada.")
 
 
 class EstimationResponse(BaseModel):
     estimation: str = Field(description="Estimación generada por el LLM, en Markdown.")
     model: str = Field(description="Modelo utilizado.", examples=["gpt-4o-mini"])
     provider: str = Field(description="Proveedor del LLM.", examples=["openai"])
-    usage: TokenUsageResponse | None = Field(default=None, description="Tokens consumidos en la llamada.")
+    usage: TokenUsageResponse | None = Field(default=None, description="Tokens consumidos y coste de la llamada.")
+    prompt: PromptResponse | None = Field(default=None, description="Tamaño del prompt enviado.")
     generated_at: datetime = Field(description="Momento de generación (UTC).")
 
 
@@ -80,15 +101,32 @@ async def create_estimation(
 
     usage = None
     if result.usage is not None:
+        cost = None
+        if result.cost is not None:
+            cost = CostResponse(
+                input_usd=result.cost.input_usd,
+                output_usd=result.cost.output_usd,
+                total_usd=result.cost.total_usd,
+                input_price_per_mtok=result.cost.pricing.input_per_mtok,
+                output_price_per_mtok=result.cost.pricing.output_per_mtok,
+            )
         usage = TokenUsageResponse(
             input_tokens=result.usage.input_tokens,
             output_tokens=result.usage.output_tokens,
             total_tokens=result.usage.total_tokens,
+            cost=cost,
+        )
+    prompt = None
+    if result.prompt is not None:
+        prompt = PromptResponse(
+            system_prompt_chars=result.prompt.system_prompt_chars,
+            transcription_chars=result.prompt.transcription_chars,
         )
     return EstimationResponse(
         estimation=result.estimation,
         model=result.model,
         provider=result.provider,
         usage=usage,
+        prompt=prompt,
         generated_at=datetime.now(timezone.utc),
     )

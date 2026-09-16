@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     llm_max_tokens: int = Field(default=4096, gt=0)
     llm_timeout_seconds: float = Field(default=60.0, gt=0)
 
+    # --- Precios (USD por millón de tokens) para calcular el coste de cada llamada ---
+    # Si no se definen, se usa la tabla de app/services/pricing.py según el modelo activo.
+    llm_input_price_per_mtok: float | None = Field(default=None, ge=0)
+    llm_output_price_per_mtok: float | None = Field(default=None, ge=0)
+
     # --- Propiedades derivadas ---------------------------------------------
     @property
     def model(self) -> str:

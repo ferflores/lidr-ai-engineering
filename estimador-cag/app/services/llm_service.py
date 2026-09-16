@@ -25,6 +25,7 @@ import openai
 
 from app.config import Settings, get_settings
 from app.context.examples import render_examples
+from app.services.pricing import CostEstimate, estimate_cost, find_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,21 @@ class TokenUsage:
 
 
 @dataclass(frozen=True)
+class PromptInfo:
+    """Tamaño de lo que viaja en el prompt: el contexto fijo (CAG) y la transcripción."""
+
+    system_prompt_chars: int
+    transcription_chars: int
+
+
+@dataclass(frozen=True)
 class EstimationResult:
     estimation: str
     model: str
     provider: str
     usage: TokenUsage | None = None
+    cost: CostEstimate | None = None
+    prompt: PromptInfo | None = None
 
 
 # --- Construcción del prompt ---------------------------------------------------
@@ -159,16 +170,39 @@ async def generate_estimation(transcription: str, settings: Settings | None = No
     )
 
     if settings.llm_provider == "openai":
-        return await _call_openai(system_prompt, user_prompt, settings, api_key)
-    if settings.llm_provider == "anthropic":
-        return await _call_anthropic(system_prompt, user_prompt, settings, api_key)
-    raise LLMConfigurationError(f"Proveedor LLM no soportado: '{settings.llm_provider}'")
+        text, usage = await _call_openai(system_prompt, user_prompt, settings, api_key)
+    elif settings.llm_provider == "anthropic":
+        text, usage = await _call_anthropic(system_prompt, user_prompt, settings, api_key)
+    else:
+        raise LLMConfigurationError(f"Proveedor LLM no soportado: '{settings.llm_provider}'")
+
+    cost = None
+    if usage is not None:
+        pricing = find_pricing(settings.model, settings.llm_input_price_per_mtok, settings.llm_output_price_per_mtok)
+        if pricing is not None:
+            cost = estimate_cost(usage.input_tokens, usage.output_tokens, pricing)
+        logger.info(
+            "Tokens: %d entrada + %d salida = %d; coste: %s",
+            usage.input_tokens, usage.output_tokens, usage.total_tokens,
+            f"{cost.total_usd:.6f} USD" if cost else "desconocido (modelo sin precio en la tabla)",
+        )
+
+    return EstimationResult(
+        estimation=text,
+        model=settings.model,
+        provider=settings.llm_provider,
+        usage=usage,
+        cost=cost,
+        prompt=PromptInfo(system_prompt_chars=len(system_prompt), transcription_chars=len(transcription.strip())),
+    )
 
 
 # --- Proveedores ------------------------------------------------------------------
 
 
-async def _call_openai(system_prompt: str, user_prompt: str, settings: Settings, api_key: str) -> EstimationResult:
+async def _call_openai(
+    system_prompt: str, user_prompt: str, settings: Settings, api_key: str
+) -> tuple[str, TokenUsage | None]:
     async with openai.AsyncOpenAI(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             response = await client.chat.completions.create(
@@ -199,10 +233,12 @@ async def _call_openai(system_prompt: str, user_prompt: str, settings: Settings,
     usage = None
     if response.usage is not None:
         usage = TokenUsage(input_tokens=response.usage.prompt_tokens, output_tokens=response.usage.completion_tokens)
-    return EstimationResult(estimation=text, model=settings.openai_model, provider="openai", usage=usage)
+    return text, usage
 
 
-async def _call_anthropic(system_prompt: str, user_prompt: str, settings: Settings, api_key: str) -> EstimationResult:
+async def _call_anthropic(
+    system_prompt: str, user_prompt: str, settings: Settings, api_key: str
+) -> tuple[str, TokenUsage | None]:
     async with anthropic.AsyncAnthropic(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             response = await client.messages.create(
@@ -235,4 +271,4 @@ async def _call_anthropic(system_prompt: str, user_prompt: str, settings: Settin
         logger.warning("La respuesta de Anthropic se ha cortado por LLM_MAX_TOKENS=%d", settings.llm_max_tokens)
 
     usage = TokenUsage(input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens)
-    return EstimationResult(estimation=text, model=settings.anthropic_model, provider="anthropic", usage=usage)
+    return text, usage
