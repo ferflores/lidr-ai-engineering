@@ -1,0 +1,41 @@
+name: estimador-cag
+
+on:
+  push:
+    paths:
+      - "estimador-cag/**"
+      - ".github/workflows/estimador-cag.yml"
+  pull_request:
+    paths:
+      - "estimador-cag/**"
+      - ".github/workflows/estimador-cag.yml"
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    name: Estructura, tests y arranque del servicio
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: estimador-cag
+    env:
+      # Opcionales: si se definen como secrets del repositorio, el paso 4 del script
+      # hace una llamada real al LLM. Sin ellos, se verifica todo lo demás.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'openai' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar uv (descarga el Python fijado en .python-version)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "estimador-cag/uv.lock"
+
+      - name: Instalar dependencias
+        run: uv sync --frozen
+
+      - name: Verificar estructura, tests y arranque del servicio
+        run: bash scripts/verificar.sh

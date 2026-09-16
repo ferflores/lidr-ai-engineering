@@ -1,0 +1,35 @@
+Reunión de toma de requisitos — Grupo de restaurantes "La Terraza" — 12/09/2026
+
+Asistentes: Marta (directora de operaciones del cliente), Luis (responsable de sala), Ana (consultora), Pablo (tech lead).
+
+Marta: Tenemos cuatro restaurantes en Madrid y ahora mismo las reservas nos llegan por teléfono, por Instagram y por un formulario web que acaba en un email. Se nos pierden reservas y hay dobles reservas en las horas punta. Queremos una solución propia, no queremos depender de plataformas de terceros que se quedan comisión.
+
+Ana: ¿Qué necesitáis exactamente que haga el sistema?
+
+Marta: Lo básico: que el cliente pueda ver la disponibilidad de cada restaurante y reservar mesa desde el móvil o desde la web, elegir día, hora y número de comensales, y recibir una confirmación. Y que nosotros, desde el restaurante, veamos las reservas del día en una pantalla y podamos bloquear mesas, marcar no-shows y ajustar los turnos.
+
+Luis: Importante: cada restaurante tiene su propio plano de mesas y sus turnos son distintos. El de Chamberí tiene terraza y el aforo cambia con el tiempo. Necesitamos poder configurar eso por local.
+
+Pablo: ¿Queréis una app nativa o vale con una web que funcione bien en el móvil?
+
+Marta: Para los clientes nos vale una web responsive, no queremos obligar a nadie a instalar una app. Para el personal de sala sí nos gustaría algo que funcione bien en una tablet.
+
+Ana: ¿Qué pasa con las cancelaciones y los no-shows?
+
+Marta: Queremos que el cliente pueda cancelar hasta 2 horas antes desde el enlace de la confirmación. Para grupos de más de 8 personas queremos pedir una señal con tarjeta que se devuelve si vienen. Con Stripe nos vale, ya lo usamos en la web.
+
+Luis: Y recordatorios. Un SMS o un WhatsApp el día antes reduciría muchísimo los no-shows. Con SMS vale para empezar.
+
+Pablo: ¿Tenéis algún sistema con el que haya que integrarse? ¿TPV, software de gestión?
+
+Marta: El TPV es de Revo, pero de momento no hace falta integrarlo. Lo que sí queremos es poder exportar las reservas a Excel y ver unas métricas sencillas: ocupación por turno, no-shows, reservas por canal.
+
+Ana: ¿Diseño? ¿Tenéis identidad visual?
+
+Marta: Tenemos logo y manual de marca, pero no tenemos diseñada ninguna pantalla. Nos gustaría que quede bonito, la imagen es importante para nosotros.
+
+Pablo: ¿Plazos?
+
+Marta: Nos gustaría tenerlo funcionando en el restaurante de Chamberí antes de la campaña de Navidad, a mediados de noviembre, y extenderlo al resto en enero. Presupuesto no hemos fijado, queremos ver primero vuestra estimación.
+
+Ana: Perfecto. Os preparamos una estimación con el desglose y las dudas que nos queden.
