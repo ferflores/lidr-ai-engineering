@@ -16,15 +16,18 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-# 2) El código de la aplicación (el .env NO se copia: ver .dockerignore; llega por docker compose)
+# 2) El código: API (app/) e interfaz de chat (streamlit_app.py + .streamlit/config.toml).
+#    El .env NO se copia (ver .dockerignore): llega como variables de entorno por docker compose.
 COPY app ./app
+COPY streamlit_app.py ./
+COPY .streamlit/config.toml ./.streamlit/config.toml
 
 # Usuario sin privilegios
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 ENV PATH="/app/.venv/bin:$PATH"
-EXPOSE 8000
+EXPOSE 8000 8501
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"

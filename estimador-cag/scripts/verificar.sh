@@ -24,6 +24,7 @@ REQUIRED=(
   app/services/__init__.py app/services/llm_service.py
   app/context/__init__.py app/context/examples.py
   .env.example .gitignore pyproject.toml README.md
+  streamlit_app.py
 )
 for f in "${REQUIRED[@]}"; do
   [ -e "$f" ] && ok "$f" || fail "falta $f"
@@ -40,7 +41,7 @@ fi
 echo "== 2/4 Tests =="
 uv run pytest -q
 
-echo "== 3/4 Arranque del servicio en $BASE_URL =="
+echo "== 3/4 Arranque de la API en $BASE_URL y de la interfaz de chat =="
 uv run uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
@@ -55,6 +56,17 @@ DOCS_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/docs")
 curl -sf "$BASE_URL/openapi.json" | grep -q '"/api/v1/estimate"' && ok "POST /api/v1/estimate está en el OpenAPI" || fail "POST /api/v1/estimate no está en el OpenAPI"
 VALIDATION_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/estimate" -H "Content-Type: application/json" -d '{"transcription": ""}')
 [ "$VALIDATION_CODE" = "422" ] && ok "POST /api/v1/estimate valida el body (422 con transcripción vacía)" || fail "validación del body devolvió $VALIDATION_CODE"
+
+STREAMLIT_PORT=$((PORT + 1))
+uv run streamlit run streamlit_app.py --server.headless true --server.port "$STREAMLIT_PORT" --server.address 127.0.0.1 >/dev/null 2>&1 &
+STREAMLIT_PID=$!
+trap 'kill "$SERVER_PID" "$STREAMLIT_PID" 2>/dev/null || true' EXIT
+for _ in $(seq 1 60); do
+  curl -sf "http://127.0.0.1:$STREAMLIT_PORT/_stcore/health" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+STREAMLIT_HEALTH=$(curl -sf "http://127.0.0.1:$STREAMLIT_PORT/_stcore/health" || true)
+[ "$STREAMLIT_HEALTH" = "ok" ] && ok "streamlit run streamlit_app.py arranca (GET /_stcore/health -> ok)" || fail "Streamlit no responde en el puerto $STREAMLIT_PORT"
 
 echo "== 4/4 Llamada real al LLM =="
 if [ "${SKIP_LLM:-0}" = "1" ]; then

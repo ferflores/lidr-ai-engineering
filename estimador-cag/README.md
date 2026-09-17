@@ -1,8 +1,9 @@
-# Estimador CAG — Proyecto 1 (Sesión 02)
+# Estimador CAG — Proyecto 1 (Sesiones 02 y 03)
 
 Servicio **FastAPI** que recibe la transcripción de una reunión con un cliente y devuelve una
 **estimación de software** (desglose de tareas, horas, coste, equipo y duración) generada por un LLM
-(**OpenAI** o **Anthropic**).
+(**OpenAI** o **Anthropic**), más una **interfaz de chat en Streamlit** que muestra la estimación en
+streaming (sesión 03).
 
 Arquitectura **CAG**: todo el contexto que necesita el modelo (estimaciones de ejemplo) viaja íntegro
 dentro del prompt en cada llamada. No hay base de datos, ni retrieval, ni persistencia.
@@ -38,7 +39,9 @@ estimador-cag/
 │   ├── services/llm_service.py # system prompt + inyección de ejemplos + llamada al LLM
 │   ├── services/pricing.py     # precios por millón de tokens y cálculo del coste de cada llamada
 │   └── context/examples.py     # estimaciones de ejemplo (el "conocimiento" del sistema)
-├── tests/                      # pytest: API, inyección de contexto y proveedores (LLM simulado)
+├── streamlit_app.py            # interfaz de chat (Streamlit) con streaming, historial y panel CAG
+├── .streamlit/                 # config.toml (headless) y secrets.toml.example (alternativa a .env)
+├── tests/                      # pytest: API, contexto, proveedores, streaming y la app de chat (LLM simulado)
 ├── scripts/
 │   ├── estimar.sh              # envía una transcripción al endpoint con curl
 │   ├── comparar.py             # compara transcripciones: tokens, coste, ahorro y estimación
@@ -73,14 +76,22 @@ uv run uvicorn app.main:app --reload     # http://localhost:8000
 - Swagger UI: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/health>
 
+Interfaz de chat (ver "Interfaz de chat con Streamlit"):
+
+```bash
+uv run streamlit run streamlit_app.py    # http://localhost:8501
+```
+
 ## Ejecutar con Docker
 
 ```bash
 cp .env.example .env                 # rellena la API key (solo la primera vez)
-docker compose up --build -d         # construye la imagen y arranca en http://localhost:8000
-docker compose logs -f api           # ver los logs
+docker compose up --build -d         # API en http://localhost:8000 y chat en http://localhost:8501
+docker compose logs -f api chat      # ver los logs
 docker compose down                  # parar
 ```
+
+Levanta dos servicios con la misma imagen: `api` (FastAPI, puerto 8000) y `chat` (Streamlit, puerto 8501).
 
 Lanzar estimaciones por curl contra el contenedor:
 
@@ -106,7 +117,8 @@ Cómo está montado:
 - El `.env` **no se copia a la imagen** (está en `.dockerignore`): `docker compose` lo inyecta como
   variables de entorno al arrancar. Sin `.env` el servicio arranca igualmente, pero el endpoint de
   estimación responde `500` hasta que se configure la API key.
-- El contenedor corre con un usuario sin privilegios y tiene un `HEALTHCHECK` sobre `/health`.
+- Los contenedores corren con un usuario sin privilegios y tienen `HEALTHCHECK` (`/health` en la API,
+  `/_stcore/health` en Streamlit).
 
 ## Variables de entorno
 
@@ -184,6 +196,46 @@ Respuesta:
   prompt es contexto y qué parte es dato.
 
 Códigos de respuesta: `200` estimación generada · `422` body inválido · `500` falta la API key · `502` el proveedor ha fallado.
+
+## Interfaz de chat con Streamlit
+
+`streamlit_app.py`, en la raíz del proyecto, es una interfaz conversacional sobre la misma lógica que el
+endpoint: mismo system prompt, mismos ejemplos de contexto y misma llamada al LLM, pero en streaming.
+
+```bash
+uv run streamlit run streamlit_app.py      # abre http://localhost:8501
+```
+
+Qué hace:
+
+- **Chat** con `st.chat_message` y `st.chat_input`. El historial se guarda en `st.session_state` y
+  permanece en pantalla durante la sesión.
+- **Streaming**: la estimación se va escribiendo fragmento a fragmento con `st.write_stream`, tanto con
+  OpenAI (`stream=True` + `stream_options.include_usage`) como con Anthropic (`messages.stream`).
+  La lógica está en `EstimationStream`, en `app/services/llm_service.py`.
+- **Conversación con memoria**: por defecto cada mensaje nuevo incluye la conversación anterior, así se
+  pueden pedir ajustes sobre la estimación ("reduce el alcance", "¿y sin el blog?"). El primer mensaje se
+  trata como la transcripción y los siguientes como preguntas. Se puede desactivar en la barra lateral,
+  y las métricas muestran cómo crecen los tokens de entrada con el historial.
+- **Barra lateral (Nivel 3)**: proveedor (solo los que tienen API key), modelo y parámetros; el system
+  prompt activo en solo lectura; el contexto estático inyectado (las estimaciones de ejemplo); ejemplos
+  de transcripción para enviar con un clic; y las métricas de la última llamada: modelo, tokens de
+  entrada, tokens de salida, tiempo y coste. Cada respuesta lleva además esos datos en su pie.
+- **API key**: se lee de `.env` (igual que la API) o, si no está ahí, de `.streamlit/secrets.toml` con
+  `st.secrets` (hay un `.streamlit/secrets.toml.example`). Nunca va en el código. Sin API key el chat
+  aparece deshabilitado con un aviso.
+
+Tests sin llamadas reales: `tests/test_streaming.py` (el servicio de streaming y el historial) y
+`tests/test_streamlit_app.py` (la app completa con `streamlit.testing.v1.AppTest`: abre el chat, envía
+una transcripción, comprueba el streaming, las métricas y que el segundo turno lleva el historial).
+
+Checklist de la sesión 03:
+
+- [x] `streamlit run streamlit_app.py` abre una interfaz de chat en el navegador
+- [x] Puedes pegar una transcripción de reunión y recibes una estimación de software
+- [x] La conversación persiste en pantalla (puedes hacer varias preguntas seguidas)
+- [x] La respuesta se muestra en streaming, no de golpe
+- [x] La API key se lee desde `.env` o `st.secrets`, no está en el código
 
 ## Tokens y coste
 
@@ -340,9 +392,16 @@ arranca con `docker compose` y comprueba `/health`. Si se configuran los secrets
 - **Docker opcional**: el ejercicio no lo pide, pero el stack del curso corre en contenedores. El
   `Dockerfile` y el `docker-compose.yml` no cambian nada del código: la misma app corre con `uv run` o
   en contenedor.
+- **Streaming síncrono para Streamlit**: Streamlit ejecuta el script de forma síncrona, así que
+  `EstimationStream` usa los clientes síncronos de los SDK y expone un iterable que `st.write_stream`
+  consume directamente. El endpoint REST sigue usando la versión asíncrona; ambos comparten el prompt,
+  la traducción de errores y el cálculo de coste.
+- **Historial en el chat**: el endpoint sigue siendo de un solo turno; la conversación con memoria vive
+  solo en la interfaz, que decide qué turnos enviar.
 
 ## Próximos pasos (sesión en vivo)
 
+- Sesión 03: wrapper de abstracción de proveedores, cacheo de respuestas y capa de logging/trazabilidad.
 - Mejorar los ejemplos de contexto (más variedad, casos parecidos a los reales).
 - Iterar el prompt y comparar la calidad de las estimaciones entre proveedores.
 - Explorar parámetros del modelo (`LLM_TEMPERATURE`, `LLM_MAX_TOKENS`).

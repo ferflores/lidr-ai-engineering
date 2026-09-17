@@ -21,3 +21,30 @@ services:
           path: ./uv.lock
         - action: rebuild
           path: ./pyproject.toml
+
+  # Interfaz de chat (Streamlit), misma imagen y misma configuración que la API.
+  chat:
+    build: .
+    image: estimador-cag:latest
+    container_name: estimador-cag-chat
+    command: ["streamlit", "run", "streamlit_app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./app
+          target: /app/app
+        - action: sync+restart
+          path: ./streamlit_app.py
+          target: /app/streamlit_app.py
