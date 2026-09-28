@@ -1,0 +1,18 @@
+# Metadatos de la plantilla. Los lee app/services/prompts.py (tomllib, sin dependencias).
+[prompt]
+name = "estimacion"
+version = "v2"
+description = "Parámetros tipados del formulario en el mensaje de usuario; system prompt estable y reutilizable entre llamadas"
+created = 2026-09-28
+changelog = [
+  "Separa el contexto fijo (rol, reglas, formato, ejemplos CAG) de los datos de cada petición",
+  "Añade nombre y tipo de proyecto, plazo objetivo, enfoque (conservadora/equilibrada/optimista) y nivel de detalle",
+  "La tarifa por hora sale del system prompt y pasa a ser un parámetro de la petición",
+  "Define dos formatos de salida (completa y resumen) para controlar los tokens de salida",
+  "La contingencia y la viabilidad del plazo son líneas explícitas del formato, y el mensaje de usuario cierra con recordatorios por petición (gpt-4o-mini los omitía si solo estaban en el system prompt)",
+]
+
+# Variables que cada plantilla espera recibir. Si falta alguna, el registro falla antes de llamar al LLM.
+[variables]
+system = ["examples"]
+user = ["transcription", "project_name", "project_type", "hourly_rate_eur", "deadline_weeks", "estimation_mode", "detail_level"]

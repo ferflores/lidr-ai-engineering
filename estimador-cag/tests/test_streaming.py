@@ -1,22 +1,23 @@
-"""Tests del streaming (EstimationStream) y del historial de conversación, con clientes simulados."""
+"""Tests del streaming (EstimationStream) con clientes simulados."""
 
 from types import SimpleNamespace
 
 import pytest
 
 from app.context.examples import ESTIMATION_EXAMPLES
+from app.schemas.estimation import EstimationRequest
 from app.services import llm_service
 from app.services.llm_service import (
-    ChatTurn,
     EstimationStream,
     LLMConfigurationError,
     LLMProviderError,
-    build_messages,
     build_user_prompt,
 )
+from app.services.prompts import PromptTemplateNotFound
 from tests.conftest import make_settings
 
 TRANSCRIPCION = "El cliente quiere una landing page con formulario de contacto e integración con HubSpot."
+REQUEST = EstimationRequest(transcription=TRANSCRIPCION)
 FRAGMENTOS = ["## Estimación: ", "Landing page\n\n", "**Total estimado: 80 horas**"]
 
 
@@ -66,77 +67,71 @@ def _fake_anthropic(captured: dict, fragmentos=FRAGMENTOS, stop_reason="end_turn
     return FakeAnthropic
 
 
-# --- Historial -------------------------------------------------------------------
-
-
-def test_build_messages_envuelve_solo_la_primera_transcripcion():
-    mensajes = build_messages(
-        "¿Y si quitamos el blog?",
-        history=[ChatTurn("user", TRANSCRIPCION), ChatTurn("assistant", "## Estimación: Landing page")],
-    )
-
-    assert [m["role"] for m in mensajes] == ["user", "assistant", "user"]
-    assert mensajes[0]["content"] == build_user_prompt(TRANSCRIPCION)
-    assert mensajes[1]["content"] == "## Estimación: Landing page"
-    assert mensajes[2]["content"] == "¿Y si quitamos el blog?"
-
-
-def test_build_messages_sin_historial():
-    assert build_messages(TRANSCRIPCION) == [{"role": "user", "content": build_user_prompt(TRANSCRIPCION)}]
-
-
 # --- OpenAI ----------------------------------------------------------------------
 
 
 def test_streaming_openai_devuelve_fragmentos_y_resultado(monkeypatch):
     captured = {}
     monkeypatch.setattr(llm_service.openai, "OpenAI", _fake_openai(captured))
+    request = EstimationRequest(transcription=TRANSCRIPCION, deadline_weeks=4, estimation_mode="equilibrada")
 
-    stream = EstimationStream(TRANSCRIPCION, make_settings(openai_api_key="sk-test"))
+    stream = EstimationStream(request, make_settings(openai_api_key="sk-test"))
     assert stream.result is None
+    assert stream.prompt is None
     fragmentos = list(stream)
 
     assert fragmentos == FRAGMENTOS
-    request = captured["request"]
-    assert request["stream"] is True
-    assert request["stream_options"] == {"include_usage": True}
-    assert request["model"] == "gpt-4o-mini"
-    assert [m["role"] for m in request["messages"]] == ["system", "user"]
-    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in request["messages"][0]["content"]
-    assert TRANSCRIPCION in request["messages"][1]["content"]
+    llamada = captured["request"]
+    assert llamada["stream"] is True
+    assert llamada["stream_options"] == {"include_usage": True}
+    assert llamada["model"] == "gpt-4o-mini"
+    assert [m["role"] for m in llamada["messages"]] == ["system", "user"]
+    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in llamada["messages"][0]["content"]
+    assert TRANSCRIPCION in llamada["messages"][1]["content"]
+    assert "Plazo objetivo: 4 semanas" in llamada["messages"][1]["content"]
+    assert "Enfoque: equilibrada" in llamada["messages"][1]["content"]
 
+    assert stream.prompt.template.id == "estimacion/v2"
     result = stream.result
     assert result.estimation == "".join(FRAGMENTOS)
     assert result.provider == "openai"
     assert result.usage.total_tokens == 140
     assert result.cost.total_usd == 0.000039
+    assert result.prompt.version == "v2"
     assert result.elapsed_seconds is not None and result.elapsed_seconds >= 0
 
 
-def test_streaming_con_historial_envia_la_conversacion(monkeypatch):
+def test_streaming_respeta_la_version_de_plantilla(monkeypatch):
     captured = {}
     monkeypatch.setattr(llm_service.openai, "OpenAI", _fake_openai(captured))
-    history = [ChatTurn("user", TRANSCRIPCION), ChatTurn("assistant", "## Estimación: Landing page")]
+    request = EstimationRequest(transcription=TRANSCRIPCION, prompt_version="v1")
 
-    list(EstimationStream("Reduce el alcance a 60 horas", make_settings(openai_api_key="sk-test"), history=history))
+    stream = EstimationStream(request, make_settings(openai_api_key="sk-test"))
+    list(stream)
 
-    roles = [m["role"] for m in captured["request"]["messages"]]
-    assert roles == ["system", "user", "assistant", "user"]
-    assert "<transcripcion>" in captured["request"]["messages"][1]["content"]
-    assert captured["request"]["messages"][3]["content"] == "Reduce el alcance a 60 horas"
+    assert stream.prompt.template.id == "estimacion/v1"
+    assert "Tarifa de referencia para el coste: 50 €/hora." in captured["request"]["messages"][0]["content"]
+    assert stream.result.prompt.version == "v1"
 
 
 def test_streaming_respuesta_vacia_lanza_error(monkeypatch):
     monkeypatch.setattr(llm_service.openai, "OpenAI", _fake_openai({}, fragmentos=[]))
 
     with pytest.raises(LLMProviderError, match="vacía"):
-        list(EstimationStream(TRANSCRIPCION, make_settings(openai_api_key="sk-test")))
+        list(EstimationStream(REQUEST, make_settings(openai_api_key="sk-test")))
 
 
 def test_streaming_sin_api_key_lanza_error_al_iterar():
-    stream = EstimationStream(TRANSCRIPCION, make_settings())
+    stream = EstimationStream(REQUEST, make_settings())
 
     with pytest.raises(LLMConfigurationError, match="OPENAI_API_KEY"):
+        list(stream)
+
+
+def test_streaming_version_inexistente_lanza_error_al_iterar():
+    stream = EstimationStream(EstimationRequest(transcription=TRANSCRIPCION, prompt_version="v99"), make_settings())
+
+    with pytest.raises(PromptTemplateNotFound, match="v99"):
         list(stream)
 
 
@@ -148,16 +143,16 @@ def test_streaming_anthropic_devuelve_fragmentos_y_resultado(monkeypatch):
     monkeypatch.setattr(llm_service.anthropic, "Anthropic", _fake_anthropic(captured))
     settings = make_settings(llm_provider="anthropic", anthropic_api_key="sk-ant-test")
 
-    stream = EstimationStream(TRANSCRIPCION, settings)
+    stream = EstimationStream(REQUEST, settings)
     fragmentos = list(stream)
 
     assert fragmentos == FRAGMENTOS
-    request = captured["request"]
-    assert request["model"] == "claude-haiku-4-5"
-    assert request["max_tokens"] == 1234
-    assert request["extra_body"] == {"temperature": 0.2}
-    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in request["system"]
-    assert request["messages"] == [{"role": "user", "content": build_user_prompt(TRANSCRIPCION)}]
+    llamada = captured["request"]
+    assert llamada["model"] == "claude-haiku-4-5"
+    assert llamada["max_tokens"] == 1234
+    assert llamada["extra_body"] == {"temperature": 0.2}
+    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in llamada["system"]
+    assert llamada["messages"] == [{"role": "user", "content": build_user_prompt(REQUEST, settings)}]
 
     assert stream.result.provider == "anthropic"
     assert stream.result.usage.total_tokens == 140
@@ -169,4 +164,4 @@ def test_streaming_anthropic_rechazo_lanza_error(monkeypatch):
     settings = make_settings(llm_provider="anthropic", anthropic_api_key="sk-ant-test")
 
     with pytest.raises(LLMProviderError, match="rechazado"):
-        list(EstimationStream(TRANSCRIPCION, settings))
+        list(EstimationStream(REQUEST, settings))

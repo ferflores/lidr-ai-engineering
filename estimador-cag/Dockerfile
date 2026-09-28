@@ -16,9 +16,10 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-# 2) El código: API (app/) e interfaz de chat (streamlit_app.py + .streamlit/config.toml).
+# 2) El código: API (app/), plantillas de prompt (prompts/) y formulario (streamlit_app.py + .streamlit/config.toml).
 #    El .env NO se copia (ver .dockerignore): llega como variables de entorno por docker compose.
 COPY app ./app
+COPY prompts ./prompts
 COPY streamlit_app.py ./
 COPY .streamlit/config.toml ./.streamlit/config.toml
 

@@ -4,17 +4,23 @@ Todo el contexto que necesita el modelo (las estimaciones de ejemplo de
 `app/context/examples.py`) viaja dentro del system prompt en cada llamada.
 No hay base de datos, ni retrieval, ni persistencia.
 
+El texto de los prompts NO está aquí: vive en `prompts/estimacion/<versión>/` como plantillas
+versionadas (ver `prompts/README.md`) y lo carga `app/services/prompts.py`. Este módulo solo
+decide qué variables recibe la plantilla y cómo se llama al proveedor.
+
 Estructura de mensajes:
 
-    [system]    -> instrucciones + ejemplos de estimaciones previas
-    [user]      -> transcripción de la reunión a estimar
+    [system]    -> plantilla system.md.j2: rol, reglas, formato + ejemplos de estimaciones previas
+    [user]      -> plantilla user.md.j2: parámetros tipados de la petición + transcripción
     [assistant] -> (respuesta del modelo: la estimación)
 
 Dos formas de usarlo:
-- `generate_estimation(...)`: asíncrona, respuesta completa. La usa el endpoint REST.
-- `EstimationStream(...)`: síncrona, en streaming (fragmento a fragmento). La usa la
-  interfaz de chat de Streamlit. Admite historial de conversación para preguntas de
-  seguimiento sobre una estimación.
+- `generate_estimation(request, settings)`: asíncrona, respuesta completa. La usa el endpoint REST.
+- `EstimationStream(request, settings)`: síncrona, en streaming (fragmento a fragmento). La usa el
+  formulario de Streamlit.
+
+Cada llamada es independiente y reproducible: misma petición + misma versión de plantilla = mismo
+prompt. No hay historial de conversación.
 
 Se soportan dos proveedores, seleccionables con `LLM_PROVIDER`:
 - openai    -> gpt-4o-mini (Chat Completions API)
@@ -25,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import anthropic
@@ -33,11 +39,11 @@ import openai
 
 from app.config import Settings, get_settings
 from app.context.examples import render_examples
+from app.schemas.estimation import EstimationRequest
 from app.services.pricing import CostEstimate, estimate_cost, find_pricing
+from app.services.prompts import PromptTemplate, get_template
 
 logger = logging.getLogger(__name__)
-
-HOURLY_RATE_EUR = 50
 
 
 # --- Errores del servicio -----------------------------------------------------
@@ -70,10 +76,27 @@ class TokenUsage:
 
 @dataclass(frozen=True)
 class PromptInfo:
-    """Tamaño de lo que viaja en el prompt: el contexto fijo (CAG) y la transcripción."""
+    """Qué plantilla se usó y cuánto ocupa cada parte del prompt."""
 
-    system_prompt_chars: int
+    template: str            # nombre de la plantilla ("estimacion")
+    version: str             # versión usada ("v2")
+    system_prompt_chars: int  # contexto fijo: instrucciones + ejemplos CAG (igual en todas las llamadas)
+    user_prompt_chars: int    # parte variable: parámetros + transcripción
     transcription_chars: int
+
+
+@dataclass(frozen=True)
+class RenderedPrompt:
+    """Los dos mensajes que se envían al modelo, ya renderizados desde la plantilla."""
+
+    template: PromptTemplate
+    system: str
+    user: str
+
+    @property
+    def messages(self) -> list[dict[str, str]]:
+        """Mensajes de la conversación sin el system prompt, en el formato común a ambos proveedores."""
+        return [{"role": "user", "content": self.user}]
 
 
 @dataclass(frozen=True)
@@ -87,97 +110,36 @@ class EstimationResult:
     elapsed_seconds: float | None = None
 
 
-@dataclass(frozen=True)
-class ChatTurn:
-    """Un turno previo de la conversación (`role` es "user" o "assistant")."""
-
-    role: str
-    content: str
-
-
 # --- Construcción del prompt ---------------------------------------------------
 
-SYSTEM_PROMPT_TEMPLATE = """\
-Eres un estimador de software senior en una consultora de desarrollo a medida. \
-Tu trabajo es leer la transcripción de una reunión con un cliente y producir una \
-estimación de esfuerzo realista, siguiendo el mismo formato y los mismos criterios \
-que las estimaciones previas de la empresa que se incluyen más abajo.
 
-## Cómo estimar
-- Identifica los requisitos funcionales y técnicos mencionados en la reunión: \
-funcionalidades, integraciones, plataformas, plazos, si existe diseño previo, etc.
-- Desglosa el trabajo en tareas concretas y asigna horas a cada una. Usa las \
-estimaciones previas como referencia de granularidad y de magnitud: trabajos \
-similares deben tener horas similares.
-- Incluye siempre tareas transversales: análisis, testing y QA, despliegue.
-- Si el cliente menciona un plazo, valora si es viable con el equipo recomendado y dilo.
-- Si la reunión no aclara algo relevante, no lo inventes: recógelo en "Supuestos y \
-riesgos" o en "Preguntas pendientes para el cliente".
-- Sé conservador: es mejor una estimación algo alta con supuestos explícitos que \
-una optimista.
-- Tarifa de referencia para el coste: {rate} €/hora.
+def build_prompt(
+    request: EstimationRequest,
+    settings: Settings | None = None,
+    examples: list[dict[str, str]] | None = None,
+) -> RenderedPrompt:
+    """Renderiza la plantilla (la versión pedida en `request.prompt_version` o la configurada).
 
-## Formato de salida
-Responde únicamente en Markdown y en español, con exactamente esta estructura:
-
-## Estimación: <nombre del proyecto>
-
-### Resumen del alcance
-<2-4 líneas>
-
-### Desglose de tareas:
-1. <Tarea>: <N> horas
-2. ...
-
-**Total estimado: <N> horas**
-**Coste estimado: <N> €** (a {rate} €/hora)
-**Equipo recomendado: <perfiles>**
-**Duración estimada: <X-Y> semanas**
-
-### Supuestos y riesgos
-- ...
-
-### Preguntas pendientes para el cliente
-- ...
-
-## Ejemplos de estimaciones previas
-Estas son estimaciones reales entregadas anteriormente. Úsalas como referencia de \
-formato, nivel de detalle y magnitud de las horas.
-
-{examples}
-"""
-
-
-def build_system_prompt(examples: list[dict[str, str]] | None = None) -> str:
-    """Construye el system prompt: rol del modelo + instrucciones + ejemplos inyectados."""
-    return SYSTEM_PROMPT_TEMPLATE.format(rate=HOURLY_RATE_EUR, examples=render_examples(examples))
-
-
-def build_user_prompt(transcription: str) -> str:
-    """Construye el mensaje de usuario con la transcripción a estimar."""
-    return (
-        "Esta es la transcripción de la reunión con el cliente. "
-        "Genera la estimación siguiendo el formato indicado.\n\n"
-        f"<transcripcion>\n{transcription.strip()}\n</transcripcion>"
+    Las plantillas reciben siempre el mismo conjunto de variables: los parámetros tipados de la
+    petición y el bloque de ejemplos CAG. Cada versión usa las que necesita.
+    """
+    template = get_template(settings, request.prompt_version)
+    variables = {**request.prompt_variables(), "examples": render_examples(examples)}
+    return RenderedPrompt(
+        template=template,
+        system=template.render_system(**variables),
+        user=template.render_user(**variables),
     )
 
 
-def build_messages(message: str, history: Iterable[ChatTurn] = ()) -> list[dict[str, str]]:
-    """Mensajes de la conversación (sin el system prompt), en el formato común a ambos proveedores.
+def build_system_prompt(request: EstimationRequest | None = None, settings: Settings | None = None) -> str:
+    """System prompt renderizado. Sin petición, usa los parámetros por defecto (útil para inspeccionarlo)."""
+    return build_prompt(request or EstimationRequest(transcription="(vista previa del system prompt)"), settings).system
 
-    El primer mensaje de usuario de la conversación es la transcripción y se envuelve con
-    `build_user_prompt`; los siguientes (preguntas o ajustes sobre la estimación) se envían tal cual.
-    """
-    turns = [*history, ChatTurn(role="user", content=message)]
-    messages: list[dict[str, str]] = []
-    first_user_seen = False
-    for turn in turns:
-        content = turn.content.strip()
-        if turn.role == "user" and not first_user_seen:
-            content = build_user_prompt(content)
-            first_user_seen = True
-        messages.append({"role": turn.role, "content": content})
-    return messages
+
+def build_user_prompt(request: EstimationRequest, settings: Settings | None = None) -> str:
+    """Mensaje de usuario renderizado: parámetros + transcripción."""
+    return build_prompt(request, settings).user
 
 
 # --- Utilidades comunes ----------------------------------------------------------
@@ -199,8 +161,8 @@ def _build_result(
     text: str,
     usage: TokenUsage | None,
     settings: Settings,
-    system_prompt: str,
-    transcription: str,
+    prompt: RenderedPrompt,
+    request: EstimationRequest,
     elapsed_seconds: float | None = None,
 ) -> EstimationResult:
     cost = None
@@ -209,10 +171,11 @@ def _build_result(
         if pricing is not None:
             cost = estimate_cost(usage.input_tokens, usage.output_tokens, pricing)
         logger.info(
-            "Tokens: %d entrada + %d salida = %d; coste: %s; tiempo: %s",
+            "Tokens: %d entrada + %d salida = %d; coste: %s; tiempo: %s; plantilla: %s",
             usage.input_tokens, usage.output_tokens, usage.total_tokens,
             f"{cost.total_usd:.6f} USD" if cost else "desconocido (modelo sin precio en la tabla)",
             f"{elapsed_seconds:.1f} s" if elapsed_seconds is not None else "?",
+            prompt.template.id,
         )
     return EstimationResult(
         estimation=text,
@@ -220,7 +183,13 @@ def _build_result(
         provider=settings.llm_provider,
         usage=usage,
         cost=cost,
-        prompt=PromptInfo(system_prompt_chars=len(system_prompt), transcription_chars=len(transcription.strip())),
+        prompt=PromptInfo(
+            template=prompt.template.name,
+            version=prompt.template.version,
+            system_prompt_chars=len(prompt.system),
+            user_prompt_chars=len(prompt.user),
+            transcription_chars=len(request.transcription),
+        ),
         elapsed_seconds=elapsed_seconds,
     )
 
@@ -259,37 +228,34 @@ def _anthropic_extra_body(settings: Settings) -> dict[str, float]:
 # --- Respuesta completa (endpoint REST) --------------------------------------------
 
 
-async def generate_estimation(transcription: str, settings: Settings | None = None) -> EstimationResult:
-    """Genera una estimación a partir de la transcripción usando el proveedor configurado.
+async def generate_estimation(request: EstimationRequest, settings: Settings | None = None) -> EstimationResult:
+    """Genera una estimación para la petición usando el proveedor configurado.
 
-    Lanza `LLMConfigurationError` si falta la API key y `LLMProviderError` si el
-    proveedor falla o devuelve una respuesta inutilizable.
+    Lanza `PromptTemplateNotFound` si la versión de plantilla no existe, `LLMConfigurationError`
+    si falta la API key y `LLMProviderError` si el proveedor falla o devuelve una respuesta inutilizable.
     """
     settings = settings or get_settings()
+    prompt = build_prompt(request, settings)  # antes que la API key: una versión inexistente es un error de la petición
     api_key = _require_api_key(settings)
-    system_prompt = build_system_prompt()
-    messages = build_messages(transcription)
     logger.info(
-        "Generando estimación con %s/%s (%d caracteres de transcripción)",
-        settings.llm_provider, settings.model, len(transcription),
+        "Generando estimación con %s/%s, plantilla %s (%d caracteres de transcripción)",
+        settings.llm_provider, settings.model, prompt.template.id, len(request.transcription),
     )
 
     started = time.perf_counter()
     if settings.llm_provider == "openai":
-        text, usage = await _call_openai(system_prompt, messages, settings, api_key)
+        text, usage = await _call_openai(prompt, settings, api_key)
     else:
-        text, usage = await _call_anthropic(system_prompt, messages, settings, api_key)
-    return _build_result(text, usage, settings, system_prompt, transcription, time.perf_counter() - started)
+        text, usage = await _call_anthropic(prompt, settings, api_key)
+    return _build_result(text, usage, settings, prompt, request, time.perf_counter() - started)
 
 
-async def _call_openai(
-    system_prompt: str, messages: list[dict[str, str]], settings: Settings, api_key: str
-) -> tuple[str, TokenUsage | None]:
+async def _call_openai(prompt: RenderedPrompt, settings: Settings, api_key: str) -> tuple[str, TokenUsage | None]:
     async with openai.AsyncOpenAI(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             response = await client.chat.completions.create(
                 model=settings.openai_model,
-                messages=[{"role": "system", "content": system_prompt}, *messages],
+                messages=[{"role": "system", "content": prompt.system}, *prompt.messages],
                 temperature=settings.llm_temperature,
                 max_completion_tokens=settings.llm_max_tokens,
             )
@@ -309,16 +275,14 @@ async def _call_openai(
     return text, usage
 
 
-async def _call_anthropic(
-    system_prompt: str, messages: list[dict[str, str]], settings: Settings, api_key: str
-) -> tuple[str, TokenUsage | None]:
+async def _call_anthropic(prompt: RenderedPrompt, settings: Settings, api_key: str) -> tuple[str, TokenUsage | None]:
     async with anthropic.AsyncAnthropic(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             response = await client.messages.create(
                 model=settings.anthropic_model,
                 max_tokens=settings.llm_max_tokens,
-                system=system_prompt,
-                messages=messages,
+                system=prompt.system,
+                messages=prompt.messages,
                 extra_body=_anthropic_extra_body(settings),
             )
         except anthropic.APIError as exc:
@@ -337,41 +301,41 @@ async def _call_anthropic(
     return text, usage
 
 
-# --- Streaming (interfaz de chat) --------------------------------------------------
+# --- Streaming (formulario de Streamlit) ------------------------------------------
 
 
 class EstimationStream:
     """Estimación en streaming: un iterable de fragmentos de texto, listo para `st.write_stream`.
 
-        stream = EstimationStream(transcripcion, settings, history=turnos_previos)
+        stream = EstimationStream(request, settings)
         for fragmento in stream:
             ...
         stream.result   # EstimationResult con tokens, coste y tiempo (disponible al terminar)
+        stream.prompt   # RenderedPrompt: lo que se envió al modelo (disponible al empezar a iterar)
 
-    Los errores (`LLMConfigurationError`, `LLMProviderError`) se lanzan al iterar.
+    Los errores (`PromptTemplateNotFound`, `LLMConfigurationError`, `LLMProviderError`) se lanzan al iterar.
     """
 
-    def __init__(self, message: str, settings: Settings | None = None, history: Iterable[ChatTurn] = ()):
-        self.message = message
+    def __init__(self, request: EstimationRequest, settings: Settings | None = None):
+        self.request = request
         self.settings = settings or get_settings()
-        self.history = tuple(history)
+        self.prompt: RenderedPrompt | None = None
         self.result: EstimationResult | None = None
 
     def __iter__(self) -> Iterator[str]:
         settings = self.settings
+        prompt = self.prompt = build_prompt(self.request, settings)
         api_key = _require_api_key(settings)
-        system_prompt = build_system_prompt()
-        messages = build_messages(self.message, self.history)
         logger.info(
-            "Estimación en streaming con %s/%s (%d turnos previos, %d caracteres)",
-            settings.llm_provider, settings.model, len(self.history), len(self.message),
+            "Estimación en streaming con %s/%s, plantilla %s (%d caracteres de transcripción)",
+            settings.llm_provider, settings.model, prompt.template.id, len(self.request.transcription),
         )
 
         started = time.perf_counter()
         if settings.llm_provider == "openai":
-            generator = _stream_openai(system_prompt, messages, settings, api_key)
+            generator = _stream_openai(prompt, settings, api_key)
         else:
-            generator = _stream_anthropic(system_prompt, messages, settings, api_key)
+            generator = _stream_anthropic(prompt, settings, api_key)
 
         chunks: list[str] = []
         # `yield from` reenvía los fragmentos y recoge el valor de retorno del generador (el usage).
@@ -379,7 +343,7 @@ class EstimationStream:
         text = "".join(chunks).strip()
         if not text:
             raise LLMProviderError(f"{settings.llm_provider} ha devuelto una respuesta vacía")
-        self.result = _build_result(text, usage, settings, system_prompt, self.message, time.perf_counter() - started)
+        self.result = _build_result(text, usage, settings, prompt, self.request, time.perf_counter() - started)
 
 
 def _collecting(generator: Iterator[str], chunks: list[str]) -> Iterator[str]:
@@ -396,15 +360,13 @@ def _collecting(generator: Iterator[str], chunks: list[str]) -> Iterator[str]:
     return usage
 
 
-def _stream_openai(
-    system_prompt: str, messages: list[dict[str, str]], settings: Settings, api_key: str
-) -> Iterator[str]:
+def _stream_openai(prompt: RenderedPrompt, settings: Settings, api_key: str) -> Iterator[str]:
     usage = None
     with openai.OpenAI(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             stream = client.chat.completions.create(
                 model=settings.openai_model,
-                messages=[{"role": "system", "content": system_prompt}, *messages],
+                messages=[{"role": "system", "content": prompt.system}, *prompt.messages],
                 temperature=settings.llm_temperature,
                 max_completion_tokens=settings.llm_max_tokens,
                 stream=True,
@@ -425,16 +387,14 @@ def _stream_openai(
     return usage
 
 
-def _stream_anthropic(
-    system_prompt: str, messages: list[dict[str, str]], settings: Settings, api_key: str
-) -> Iterator[str]:
+def _stream_anthropic(prompt: RenderedPrompt, settings: Settings, api_key: str) -> Iterator[str]:
     with anthropic.Anthropic(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             with client.messages.stream(
                 model=settings.anthropic_model,
                 max_tokens=settings.llm_max_tokens,
-                system=system_prompt,
-                messages=messages,
+                system=prompt.system,
+                messages=prompt.messages,
                 extra_body=_anthropic_extra_body(settings),
             ) as stream:
                 for text in stream.text_stream:

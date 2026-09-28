@@ -1,0 +1,15 @@
+# Metadatos de la plantilla. Los lee app/services/prompts.py (tomllib, sin dependencias).
+[prompt]
+name = "estimacion"
+version = "v1"
+description = "Prompt original de las sesiones 02 y 03, migrado tal cual desde app/services/llm_service.py"
+created = 2026-09-16
+changelog = [
+  "Migrado desde la constante SYSTEM_PROMPT_TEMPLATE del código, sin cambios de texto",
+  "La tarifa por hora viaja dentro del system prompt (se corrige en v2)",
+]
+
+# Variables que cada plantilla espera recibir. Si falta alguna, el registro falla antes de llamar al LLM.
+[variables]
+system = ["hourly_rate_eur", "examples"]
+user = ["transcription"]

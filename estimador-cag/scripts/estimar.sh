@@ -3,6 +3,7 @@
 #
 # Uso:
 #   scripts/estimar.sh                                          # transcripciones/reunion-landing-page.json
+#   scripts/estimar.sh transcripciones/reunion-landing-page-parametros.json   # con parámetros tipados
 #   scripts/estimar.sh transcripciones/otra.json                # un cuerpo JSON ya preparado
 #   scripts/estimar.sh transcripciones/otra.txt                 # texto plano: se envuelve en JSON
 #   scripts/estimar.sh transcripciones/otra.json http://localhost:9000

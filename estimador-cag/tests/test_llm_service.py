@@ -1,4 +1,4 @@
-"""Tests del servicio LLM: inyección de contexto (CAG) y estructura de mensajes por proveedor.
+"""Tests del servicio LLM: plantilla renderizada, inyección de contexto (CAG) y estructura de mensajes por proveedor.
 
 Los clientes de OpenAI y Anthropic se sustituyen por dobles: se comprueba qué
 se les envía, sin hacer llamadas reales.
@@ -10,16 +10,20 @@ from types import SimpleNamespace
 import pytest
 
 from app.context.examples import ESTIMATION_EXAMPLES
+from app.schemas.estimation import EstimationRequest
 from app.services import llm_service
 from app.services.llm_service import (
     LLMConfigurationError,
+    build_prompt,
     build_system_prompt,
     build_user_prompt,
     generate_estimation,
 )
+from app.services.prompts import PromptTemplateNotFound
 from tests.conftest import make_settings
 
 TRANSCRIPCION = "El cliente quiere una landing page con formulario de contacto e integración con HubSpot."
+REQUEST = EstimationRequest(transcription=TRANSCRIPCION)
 
 
 class _FakeAsyncClient:
@@ -30,7 +34,23 @@ class _FakeAsyncClient:
         return False
 
 
-# --- Contexto estático ---------------------------------------------------------------
+def _fake_async_openai(captured: dict, content: str = "## Estimación: Landing page\n**Total estimado: 80 horas**"):
+    class FakeAsyncOpenAI(_FakeAsyncClient):
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+        async def _create(self, **kwargs):
+            captured["request"] = kwargs
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason="stop")],
+                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=40),
+            )
+
+    return FakeAsyncOpenAI
+
+
+# --- Contexto estático y plantilla -----------------------------------------------------
 
 
 def test_hay_al_menos_dos_ejemplos_de_contexto():
@@ -42,7 +62,7 @@ def test_hay_al_menos_dos_ejemplos_de_contexto():
 
 
 def test_system_prompt_inyecta_todos_los_ejemplos():
-    prompt = build_system_prompt()
+    prompt = build_system_prompt(settings=make_settings())
 
     assert "estimador de software" in prompt.lower()
     for ejemplo in ESTIMATION_EXAMPLES:
@@ -51,10 +71,29 @@ def test_system_prompt_inyecta_todos_los_ejemplos():
         assert ejemplo["meeting_summary"] in prompt
 
 
-def test_user_prompt_contiene_la_transcripcion():
-    prompt = build_user_prompt("   El cliente quiere una app.   ")
+def test_user_prompt_contiene_la_transcripcion_y_los_parametros():
+    request = EstimationRequest(transcription="   El cliente quiere una app nueva para su negocio.   ", deadline_weeks=6)
 
-    assert "<transcripcion>\nEl cliente quiere una app.\n</transcripcion>" in prompt
+    prompt = build_user_prompt(request, make_settings())
+
+    assert "<transcripcion>\nEl cliente quiere una app nueva para su negocio.\n</transcripcion>" in prompt
+    assert "Plazo objetivo: 6 semanas" in prompt
+
+
+def test_el_prompt_no_esta_en_el_codigo():
+    """El texto del prompt vive en prompts/, no en llm_service.py."""
+    import inspect
+
+    fuente = inspect.getsource(llm_service)
+    assert "Eres un estimador" not in fuente
+    assert "Formato de salida" not in fuente
+
+
+def test_build_prompt_usa_la_version_pedida_o_la_configurada():
+    settings = make_settings(prompt_version="v1")
+
+    assert build_prompt(REQUEST, settings).template.id == "estimacion/v1"
+    assert build_prompt(EstimationRequest(transcription=TRANSCRIPCION, prompt_version="v2"), settings).template.id == "estimacion/v2"
 
 
 # --- Configuración ----------------------------------------------------------------------
@@ -62,10 +101,17 @@ def test_user_prompt_contiene_la_transcripcion():
 
 def test_sin_api_key_lanza_error_de_configuracion():
     with pytest.raises(LLMConfigurationError, match="OPENAI_API_KEY"):
-        asyncio.run(generate_estimation(TRANSCRIPCION, make_settings()))
+        asyncio.run(generate_estimation(REQUEST, make_settings()))
 
     with pytest.raises(LLMConfigurationError, match="ANTHROPIC_API_KEY"):
-        asyncio.run(generate_estimation(TRANSCRIPCION, make_settings(llm_provider="anthropic")))
+        asyncio.run(generate_estimation(REQUEST, make_settings(llm_provider="anthropic")))
+
+
+def test_version_de_plantilla_inexistente_falla_antes_que_la_api_key():
+    request = EstimationRequest(transcription=TRANSCRIPCION, prompt_version="v99")
+
+    with pytest.raises(PromptTemplateNotFound, match="v99"):
+        asyncio.run(generate_estimation(request, make_settings()))
 
 
 def test_api_key_en_blanco_cuenta_como_ausente():
@@ -76,38 +122,25 @@ def test_api_key_en_blanco_cuenta_como_ausente():
 # --- OpenAI --------------------------------------------------------------------------------
 
 
-def test_openai_recibe_system_con_ejemplos_y_user_con_transcripcion(monkeypatch):
+def test_openai_recibe_system_con_ejemplos_y_user_con_parametros_y_transcripcion(monkeypatch):
     captured = {}
+    monkeypatch.setattr(llm_service.openai, "AsyncOpenAI", _fake_async_openai(captured))
+    request = EstimationRequest(transcription=TRANSCRIPCION, project_name="Landing HubSpot", hourly_rate_eur=60)
 
-    class FakeAsyncOpenAI(_FakeAsyncClient):
-        def __init__(self, **kwargs):
-            captured["client"] = kwargs
-            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
-
-        async def _create(self, **kwargs):
-            captured["request"] = kwargs
-            return SimpleNamespace(
-                choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content="## Estimación: Landing page\n**Total estimado: 80 horas**"),
-                        finish_reason="stop",
-                    )
-                ],
-                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=40),
-            )
-
-    monkeypatch.setattr(llm_service.openai, "AsyncOpenAI", FakeAsyncOpenAI)
-
-    result = asyncio.run(generate_estimation(TRANSCRIPCION, make_settings(openai_api_key="sk-test")))
+    result = asyncio.run(generate_estimation(request, make_settings(openai_api_key="sk-test")))
 
     assert captured["client"]["api_key"] == "sk-test"
-    request = captured["request"]
-    assert request["model"] == "gpt-4o-mini"
-    assert request["temperature"] == 0.2
-    assert request["max_completion_tokens"] == 1234
-    assert [m["role"] for m in request["messages"]] == ["system", "user"]
-    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in request["messages"][0]["content"]
-    assert TRANSCRIPCION in request["messages"][1]["content"]
+    llamada = captured["request"]
+    assert llamada["model"] == "gpt-4o-mini"
+    assert llamada["temperature"] == 0.2
+    assert llamada["max_completion_tokens"] == 1234
+    assert [m["role"] for m in llamada["messages"]] == ["system", "user"]
+    system, user = (m["content"] for m in llamada["messages"])
+    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in system
+    assert "Landing HubSpot" not in system  # los datos de la petición no van en el contexto fijo
+    assert TRANSCRIPCION in user
+    assert "Nombre del proyecto: Landing HubSpot" in user
+    assert "Tarifa: 60 €/hora" in user
 
     assert result.provider == "openai"
     assert result.model == "gpt-4o-mini"
@@ -115,8 +148,25 @@ def test_openai_recibe_system_con_ejemplos_y_user_con_transcripcion(monkeypatch)
     assert result.usage.total_tokens == 140
     # 100 tokens a 0.15 $/M + 40 tokens a 0.60 $/M
     assert (result.cost.input_usd, result.cost.output_usd, result.cost.total_usd) == (0.000015, 0.000024, 0.000039)
+    assert result.prompt.template == "estimacion"
+    assert result.prompt.version == "v2"
     assert result.prompt.transcription_chars == len(TRANSCRIPCION)
-    assert result.prompt.system_prompt_chars == len(request["messages"][0]["content"])
+    assert result.prompt.system_prompt_chars == len(system)
+    assert result.prompt.user_prompt_chars == len(user)
+
+
+def test_prompt_version_v1_envia_el_prompt_original(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(llm_service.openai, "AsyncOpenAI", _fake_async_openai(captured))
+    request = EstimationRequest(transcription=TRANSCRIPCION, prompt_version="v1")
+
+    result = asyncio.run(generate_estimation(request, make_settings(openai_api_key="sk-test")))
+
+    system, user = (m["content"] for m in captured["request"]["messages"])
+    assert "Tarifa de referencia para el coste: 50 €/hora." in system  # v1 lleva la tarifa en el system prompt
+    assert "## Parámetros" not in user
+    assert user.startswith("Esta es la transcripción de la reunión con el cliente.")
+    assert result.prompt.version == "v1"
 
 
 # --- Anthropic ------------------------------------------------------------------------------
@@ -139,18 +189,17 @@ def test_anthropic_recibe_system_con_ejemplos_y_user_con_transcripcion(monkeypat
             )
 
     monkeypatch.setattr(llm_service.anthropic, "AsyncAnthropic", FakeAsyncAnthropic)
+    settings = make_settings(llm_provider="anthropic", anthropic_api_key="sk-ant-test")
 
-    result = asyncio.run(
-        generate_estimation(TRANSCRIPCION, make_settings(llm_provider="anthropic", anthropic_api_key="sk-ant-test"))
-    )
+    result = asyncio.run(generate_estimation(REQUEST, settings))
 
     assert captured["client"]["api_key"] == "sk-ant-test"
-    request = captured["request"]
-    assert request["model"] == "claude-haiku-4-5"
-    assert request["max_tokens"] == 1234
-    assert request["extra_body"] == {"temperature": 0.2}
-    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in request["system"]
-    assert request["messages"] == [{"role": "user", "content": build_user_prompt(TRANSCRIPCION)}]
+    llamada = captured["request"]
+    assert llamada["model"] == "claude-haiku-4-5"
+    assert llamada["max_tokens"] == 1234
+    assert llamada["extra_body"] == {"temperature": 0.2}
+    assert ESTIMATION_EXAMPLES[0]["meeting_summary"] in llamada["system"]
+    assert llamada["messages"] == [{"role": "user", "content": build_user_prompt(REQUEST, settings)}]
 
     assert result.provider == "anthropic"
     assert result.model == "claude-haiku-4-5"
@@ -174,7 +223,7 @@ def test_precio_sobrescrito_desde_configuracion(monkeypatch):
     monkeypatch.setattr(llm_service.openai, "AsyncOpenAI", FakeAsyncOpenAI)
     settings = make_settings(openai_api_key="sk-test", llm_input_price_per_mtok=2.0, llm_output_price_per_mtok=8.0)
 
-    result = asyncio.run(generate_estimation(TRANSCRIPCION, settings))
+    result = asyncio.run(generate_estimation(REQUEST, settings))
 
     assert result.cost.total_usd == 10.0
     assert result.cost.pricing.input_per_mtok == 2.0

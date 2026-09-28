@@ -10,19 +10,22 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
-    # Desarrollo: `docker compose watch` sincroniza app/ al contenedor y lo reinicia al guardar;
-    # si cambian las dependencias, reconstruye la imagen.
+    # Desarrollo: `docker compose watch` sincroniza app/ y prompts/ al contenedor y lo reinicia al
+    # guardar; si cambian las dependencias, reconstruye la imagen.
     develop:
       watch:
         - action: sync+restart
           path: ./app
           target: /app/app
+        - action: sync+restart
+          path: ./prompts
+          target: /app/prompts
         - action: rebuild
           path: ./uv.lock
         - action: rebuild
           path: ./pyproject.toml
 
-  # Interfaz de chat (Streamlit), misma imagen y misma configuración que la API.
+  # Formulario web (Streamlit), misma imagen y misma configuración que la API.
   chat:
     build: .
     image: estimador-cag:latest
@@ -45,6 +48,9 @@ services:
         - action: sync+restart
           path: ./app
           target: /app/app
+        - action: sync+restart
+          path: ./prompts
+          target: /app/prompts
         - action: sync+restart
           path: ./streamlit_app.py
           target: /app/streamlit_app.py

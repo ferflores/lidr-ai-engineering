@@ -16,14 +16,18 @@ from app.routers import estimations
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 DESCRIPTION = """
-Servicio que recibe la **transcripción de una reunión** con un cliente y devuelve una
-**estimación de software** (desglose de tareas, horas, coste, equipo y duración)
+Servicio que recibe la **transcripción de una reunión** con un cliente más unos
+**parámetros tipados** (tarifa, tipo de proyecto, plazo, enfoque, nivel de detalle) y devuelve
+una **estimación de software** (desglose de tareas, horas, coste, equipo y duración)
 generada por un LLM.
 
 Arquitectura **CAG**: el contexto que necesita el modelo (estimaciones de ejemplo)
 viaja íntegro dentro del prompt en cada llamada. No hay base de datos ni retrieval.
 
-Flujo: `transcripción → system prompt con ejemplos → LLM → estimación en Markdown`.
+Los prompts son **plantillas versionadas** en `prompts/estimacion/<versión>/`, fuera del código.
+`GET /api/v1/prompts` lista las versiones; `prompt_version` en la petición elige una concreta.
+
+Flujo: `parámetros + transcripción → plantilla vN (system + user) → LLM → estimación en Markdown`.
 """
 
 settings = get_settings()
@@ -48,12 +52,13 @@ class HealthResponse(BaseModel):
     provider: str
     model: str
     llm_configured: bool
+    prompt_template: str
     timestamp: datetime
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Sistema"], summary="Estado del servicio")
 async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
-    """Devuelve 200 si el servicio está levantado, junto con el proveedor y modelo configurados."""
+    """Devuelve 200 si el servicio está levantado, con el proveedor, el modelo y la plantilla de prompt configurados."""
     return HealthResponse(
         status="ok",
         service=settings.app_name,
@@ -61,5 +66,6 @@ async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         provider=settings.llm_provider,
         model=settings.model,
         llm_configured=settings.llm_configured,
+        prompt_template=f"estimacion/{settings.prompt_version}",
         timestamp=datetime.now(timezone.utc),
     )

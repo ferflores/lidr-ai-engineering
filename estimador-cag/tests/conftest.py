@@ -16,6 +16,7 @@ def make_settings(**overrides) -> Settings:
         anthropic_api_key=None,
         llm_temperature=0.2,
         llm_max_tokens=1234,
+        prompt_version="v2",
     )
     values.update(overrides)
     return Settings(**values)

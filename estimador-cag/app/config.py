@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     anthropic_model: str = "claude-haiku-4-5"
 
+    # --- Prompt --------------------------------------------------------------
+    # Versión de la plantilla de prompt (carpeta prompts/estimacion/<versión>). Se fija de forma
+    # explícita: cambiar el prompt es cambiar de versión, nunca editar la publicada.
+    prompt_version: str = Field(
+        default="v2",
+        pattern=r"^v\d+$",
+        description="Versión de la plantilla de prompt que usan la API y el formulario por defecto.",
+    )
+
     # --- Parámetros del modelo ---------------------------------------------
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     llm_max_tokens: int = Field(default=4096, gt=0)
