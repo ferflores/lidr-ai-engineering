@@ -1,0 +1,71 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 1035 >>
+stream
+BT /F1 11 Tf 56 740 Td 15 TL
+(PANADERIA ARTESANA LA ESPIGA - Especificacion tecnica de la tienda online \(v2\)) Tj T*
+() Tj T*
+(1. Catalogo) Tj T*
+(- 60 referencias en 4 familias \(panes, bolleria, pasteleria, encargos\).) Tj T*
+(- Stock diario por producto con cierre de ventas al agotarse; el catalogo actual esta en Excel.) Tj T*
+(- Fotos y descripciones las aporta la panaderia.) Tj T*
+() Tj T*
+(2. Pedidos y pago) Tj T*
+(- Pasarela de pago: Stripe \(tarjeta\) y Bizum. No se admite pago contra reembolso.) Tj T*
+(- Pedido minimo de 10 EUR. Franjas de recogida en tienda de 30 minutos.) Tj T*
+(- Reparto a domicilio solo dentro de un radio de 3 km, con coste fijo de 2,50 EUR.) Tj T*
+(- Pedidos recurrentes semanales \(suscripcion de pan\) con pausa y cancelacion por el cliente.) Tj T*
+() Tj T*
+(3. Panel del obrador) Tj T*
+(- Vista de produccion del dia siguiente agrupada por producto y franja.) Tj T*
+(- Exportacion a Excel de los pedidos del dia.) Tj T*
+(- Avisos por WhatsApp al cliente cuando el pedido esta listo.) Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 539 >>
+stream
+BT /F1 11 Tf 56 740 Td 15 TL
+(4. Requisitos no funcionales) Tj T*
+(- Web en castellano y catalan.) Tj T*
+(- Hosting en AWS \(ya tienen cuenta\). Alta disponibilidad no requerida.) Tj T*
+(- Cumplimiento RGPD: consentimiento de cookies y politica de privacidad.) Tj T*
+(- Integracion con la impresora de tickets del obrador: fuera de alcance en esta fase.) Tj T*
+() Tj T*
+(5. Plazo y presupuesto) Tj T*
+(- Lanzamiento deseado antes de la campana de Navidad: 8 semanas desde el inicio.) Tj T*
+(- Presupuesto orientativo: 12.000 EUR.) Tj T*
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000218 00000 n 
+0000000344 00000 n 
+0000001431 00000 n 
+0000001557 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+2147
+%%EOF

@@ -91,13 +91,13 @@ def test_streaming_openai_devuelve_fragmentos_y_resultado(monkeypatch):
     assert "Plazo objetivo: 4 semanas" in llamada["messages"][1]["content"]
     assert "Enfoque: equilibrada" in llamada["messages"][1]["content"]
 
-    assert stream.prompt.template.id == "estimacion/v2"
+    assert stream.prompt.template.id == "estimacion/v3"
     result = stream.result
     assert result.estimation == "".join(FRAGMENTOS)
     assert result.provider == "openai"
     assert result.usage.total_tokens == 140
     assert result.cost.total_usd == 0.000039
-    assert result.prompt.version == "v2"
+    assert result.prompt.version == "v3"
     assert result.elapsed_seconds is not None and result.elapsed_seconds >= 0
 
 

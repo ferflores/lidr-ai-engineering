@@ -1,0 +1,9 @@
+Segunda reunión con la panadería, una semana después. Han hablado con el obrador y cambian algunas cosas respecto a lo que contaron la primera vez.
+
+El reparto a domicilio ya no será por toda la ciudad: solo dentro de un radio de 3 km alrededor de la tienda, con un coste fijo de 2,50 euros. Quieren que la web calcule automáticamente si la dirección entra en el radio y, si no, que solo ofrezca recogida en tienda.
+
+Añaden una funcionalidad nueva: pedidos recurrentes semanales (una "suscripción de pan"): el cliente elige los productos y el día de recogida y se le genera el pedido cada semana, con posibilidad de pausarlo o cancelarlo desde su cuenta.
+
+Confirman que el pago será con tarjeta a través de Stripe y también con Bizum; descartan el pago contra reembolso. La impresora de tickets del obrador queda fuera de esta fase.
+
+Preguntan si con estos cambios siguen dentro de las 8 semanas y del presupuesto que comentaron.

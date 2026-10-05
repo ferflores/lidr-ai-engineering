@@ -65,7 +65,16 @@ jobs:
           echo "$HEALTH" | grep -q '"status":"ok"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/docs)" = "200"
           curl -sf http://127.0.0.1:8000/openapi.json | grep -q '"/api/v1/estimate"'
-          curl -sf http://127.0.0.1:8000/api/v1/prompts | grep -q '"version":"v2"'
+          curl -sf http://127.0.0.1:8000/api/v1/prompts | grep -q '"version":"v3"'
+
+      - name: Comprobar las sesiones conversacionales
+        run: |
+          SESSION=$(curl -sf -X POST http://127.0.0.1:8000/api/v1/sessions)
+          echo "POST /api/v1/sessions -> $SESSION"
+          echo "$SESSION" | grep -q '"session_id"'
+          SID=$(echo "$SESSION" | sed -n 's/.*"session_id":"\([^"]*\)".*/\1/p')
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/sessions/$SID)" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/api/v1/sessions/$SID/estimate -F transcript=corta)" = "422"
 
       - name: Comprobar el formulario (Streamlit)
         run: |

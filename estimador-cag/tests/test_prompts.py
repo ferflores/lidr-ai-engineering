@@ -29,14 +29,14 @@ def _variables(**overrides) -> dict:
 def test_hay_versiones_y_la_ultima_es_la_mayor():
     versiones = list_versions()
 
-    assert versiones[:2] == ["v1", "v2"]
+    assert versiones[:3] == ["v1", "v2", "v3"]
     assert latest_version() == versiones[-1]
 
 
 def test_la_version_configurada_por_defecto_existe():
     settings = make_settings()
 
-    assert get_template(settings).version == settings.prompt_version == "v2"
+    assert get_template(settings).version == settings.prompt_version == "v3"
     assert get_template(settings, "v1").version == "v1"
 
 
@@ -145,6 +145,61 @@ def test_faltan_variables_declaradas():
 
     with pytest.raises(PromptRenderError, match="transcription"):
         template.render_user(examples="")
+    with pytest.raises(PromptRenderError, match="project_metadata"):
+        load_template("estimacion", "v3").render_system(examples="")
+
+
+# --- v3: conversación con memoria ------------------------------------------------------------
+
+
+def test_v3_declara_project_metadata_y_el_bloque_va_vacio_sin_memoria():
+    template = load_template("estimacion", "v3")
+    assert "project_metadata" in template.system_variables
+    assert template.user_variables == load_template("estimacion", "v2").user_variables
+
+    system = template.render_system(**_variables(), project_metadata=None)
+
+    assert "## Conversación con memoria" in system
+    assert system.rstrip().endswith("<project_metadata>\n</project_metadata>")
+    assert "--- attachment: <fichero> ---" in system
+
+
+def test_v3_inyecta_la_memoria_al_final_sin_tocar_el_prefijo():
+    from app.services.sessions import ProjectMetadata
+
+    template = load_template("estimacion", "v3")
+    memoria = ProjectMetadata(
+        project_name="Panadería online",
+        project_type="web",
+        agreed_scope="Tienda online con recogida y reparto.",
+        mentioned_technologies=["Stripe", "WordPress"],
+        assumed_team="1 desarrollador full-stack, 1 diseñador",
+        assumed_team_size=2,
+        last_total_hours=250,
+        hourly_rate_eur=50,
+        deadline_weeks=8,
+        attached_documents=["especificacion.pdf"],
+    )
+
+    vacio = template.render_system(**_variables(), project_metadata=None)
+    lleno = template.render_system(**_variables(), project_metadata=memoria.prompt_variables())
+
+    bloque = lleno[lleno.index("<project_metadata>"):]
+    for esperado in (
+        "- Nombre del proyecto: Panadería online",
+        "- Tipo de proyecto: web",
+        "- Alcance acordado hasta ahora: Tienda online con recogida y reparto.",
+        "- Tecnologías mencionadas: Stripe, WordPress",
+        "- Equipo asumido: 1 desarrollador full-stack, 1 diseñador (2 personas)",
+        "- Última estimación: 250 horas",
+        "- Última tarifa: 50 €/hora",
+        "- Último plazo objetivo: 8 semanas",
+        "- Documentos adjuntados en la sesión: especificacion.pdf",
+    ):
+        assert esperado in bloque
+    # El prefijo (rol, reglas, formato, ejemplos CAG) es idéntico: solo cambia la cola -> cacheable
+    assert vacio.split("## Proyecto en curso")[0] == lleno.split("## Proyecto en curso")[0]
+    assert "Panadería online" not in vacio
 
 
 def test_variable_usada_pero_no_declarada_falla(tmp_path, monkeypatch):

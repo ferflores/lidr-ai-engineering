@@ -1,0 +1,37 @@
+## Parámetros
+- Nombre del proyecto: {% if project_name %}{{ project_name }}{% else %}no indicado (usa el nombre del proyecto en curso de <project_metadata> si existe; si no, dedúcelo de la transcripción){% endif %}
+
+- Tipo de proyecto: {% if project_type == "web" %}aplicación web{% elif project_type == "movil" %}aplicación móvil{% elif project_type == "api" %}API o servicio backend{% elif project_type == "datos" %}datos y analítica{% elif project_type == "otro" %}otro (ver transcripción){% else %}no indicado (dedúcelo de la transcripción){% endif %}
+
+- Tarifa: {{ hourly_rate_eur|num }} €/hora
+- Plazo objetivo: {% if deadline_weeks %}{{ deadline_weeks }} semanas{% else %}no indicado{% endif %}
+
+- Enfoque: {{ estimation_mode }}
+- Nivel de detalle: {{ detail_level }}
+
+## Transcripción de la reunión
+<transcripcion>
+{{ transcription }}
+</transcripcion>
+
+## Recordatorios para esta petición
+{% if estimation_mode == "conservadora" %}
+- Enfoque conservadora: tras el subtotal, la línea "**Contingencia (20 %)**" con el 20 % del subtotal; el total es subtotal + contingencia.
+{% elif estimation_mode == "equilibrada" %}
+- Enfoque equilibrada: tras el subtotal, la línea "**Contingencia (10 %)**" con el 10 % del subtotal; el total es subtotal + contingencia.
+{% else %}
+- Enfoque optimista: tras el subtotal, la línea "**Contingencia (0 %): 0 horas**"; el total es igual al subtotal y en los riesgos debe constar que no hay margen.
+{% endif %}
+{% if deadline_weeks %}
+- Hay plazo objetivo: incluye la línea "**Plazo objetivo: {{ deadline_weeks }} semanas — viable / no viable: ...**" después de la duración estimada y justifícalo.
+{% else %}
+- No hay plazo objetivo: omite la línea "Plazo objetivo".
+{% endif %}
+{% if detail_level == "resumen" %}
+- Nivel `resumen`: máximo 5 bloques más la contingencia, máximo 3 supuestos y SIN la sección "Preguntas pendientes para el cliente".
+{% else %}
+- Nivel `completa`: desglose por tareas más la contingencia, supuestos y riesgos, y preguntas pendientes para el cliente.
+{% endif %}
+- Comprueba la aritmética: subtotal = suma de las líneas; contingencia = subtotal × porcentaje; total = subtotal + contingencia; coste = total × {{ hourly_rate_eur|num }} €.
+
+Genera la estimación aplicando los parámetros y recordatorios anteriores, con el formato del nivel de detalle `{{ detail_level }}`.

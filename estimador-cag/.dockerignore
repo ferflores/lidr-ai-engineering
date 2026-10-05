@@ -15,7 +15,6 @@ __pycache__
 # No hace falta en la imagen
 tests
 scripts
-transcripciones
 Dockerfile
 docker-compose.yml
 .dockerignore

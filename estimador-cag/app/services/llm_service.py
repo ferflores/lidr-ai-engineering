@@ -19,8 +19,12 @@ Dos formas de usarlo:
 - `EstimationStream(request, settings)`: síncrona, en streaming (fragmento a fragmento). La usa el
   formulario de Streamlit.
 
-Cada llamada es independiente y reproducible: misma petición + misma versión de plantilla = mismo
-prompt. No hay historial de conversación.
+Dos modos de uso:
+- Transaccional (`POST /api/v1/estimate`, sesiones 02-04): cada llamada es independiente y reproducible;
+  `RenderedPrompt.history` va vacío.
+- Conversacional (`POST /api/v1/sessions/{id}/estimate`, sesión 05): `app/services/conversation.py` añade
+  los turnos anteriores de la ventana deslizante en `history` y la memoria del proyecto (`ProjectMetadata`)
+  como variable de la plantilla del system prompt. Este módulo no sabe de sesiones: solo renderiza y llama.
 
 Se soportan dos proveedores, seleccionables con `LLM_PROVIDER`:
 - openai    -> gpt-4o-mini (Chat Completions API)
@@ -42,6 +46,7 @@ from app.context.examples import render_examples
 from app.schemas.estimation import EstimationRequest
 from app.services.pricing import CostEstimate, estimate_cost, find_pricing
 from app.services.prompts import PromptTemplate, get_template
+from app.services.sessions import ProjectMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -87,16 +92,17 @@ class PromptInfo:
 
 @dataclass(frozen=True)
 class RenderedPrompt:
-    """Los dos mensajes que se envían al modelo, ya renderizados desde la plantilla."""
+    """Lo que se envía al modelo: system prompt, turnos anteriores (si hay) y el mensaje de usuario actual."""
 
     template: PromptTemplate
     system: str
     user: str
+    history: tuple[dict[str, str], ...] = ()  # turnos user/assistant anteriores dentro de la ventana; vacío en modo transaccional
 
     @property
     def messages(self) -> list[dict[str, str]]:
         """Mensajes de la conversación sin el system prompt, en el formato común a ambos proveedores."""
-        return [{"role": "user", "content": self.user}]
+        return [*self.history, {"role": "user", "content": self.user}]
 
 
 @dataclass(frozen=True)
@@ -117,14 +123,21 @@ def build_prompt(
     request: EstimationRequest,
     settings: Settings | None = None,
     examples: list[dict[str, str]] | None = None,
+    project_metadata: ProjectMetadata | None = None,
 ) -> RenderedPrompt:
     """Renderiza la plantilla (la versión pedida en `request.prompt_version` o la configurada).
 
     Las plantillas reciben siempre el mismo conjunto de variables: los parámetros tipados de la
-    petición y el bloque de ejemplos CAG. Cada versión usa las que necesita.
+    petición, el bloque de ejemplos CAG y la memoria del proyecto (`project_metadata`, None si no hay
+    sesión o la sesión acaba de empezar). Cada versión usa las que necesita: `v3` renderiza el bloque
+    `<project_metadata>`; `v1` y `v2` lo ignoran.
     """
     template = get_template(settings, request.prompt_version)
-    variables = {**request.prompt_variables(), "examples": render_examples(examples)}
+    variables = {
+        **request.prompt_variables(),
+        "examples": render_examples(examples),
+        "project_metadata": project_metadata.prompt_variables() if project_metadata else None,
+    }
     return RenderedPrompt(
         template=template,
         system=template.render_system(**variables),
@@ -145,7 +158,7 @@ def build_user_prompt(request: EstimationRequest, settings: Settings | None = No
 # --- Utilidades comunes ----------------------------------------------------------
 
 
-def _require_api_key(settings: Settings) -> str:
+def require_api_key(settings: Settings) -> str:
     api_key = settings.api_key
     if not api_key:
         raise LLMConfigurationError(
@@ -157,7 +170,7 @@ def _require_api_key(settings: Settings) -> str:
     return api_key
 
 
-def _build_result(
+def build_result(
     text: str,
     usage: TokenUsage | None,
     settings: Settings,
@@ -236,18 +249,22 @@ async def generate_estimation(request: EstimationRequest, settings: Settings | N
     """
     settings = settings or get_settings()
     prompt = build_prompt(request, settings)  # antes que la API key: una versión inexistente es un error de la petición
-    api_key = _require_api_key(settings)
+    api_key = require_api_key(settings)
     logger.info(
         "Generando estimación con %s/%s, plantilla %s (%d caracteres de transcripción)",
         settings.llm_provider, settings.model, prompt.template.id, len(request.transcription),
     )
 
     started = time.perf_counter()
+    text, usage = await call_llm(prompt, settings, api_key)
+    return build_result(text, usage, settings, prompt, request, time.perf_counter() - started)
+
+
+async def call_llm(prompt: RenderedPrompt, settings: Settings, api_key: str) -> tuple[str, TokenUsage | None]:
+    """Envía el prompt (system + historial + mensaje actual) al proveedor configurado y devuelve texto y tokens."""
     if settings.llm_provider == "openai":
-        text, usage = await _call_openai(prompt, settings, api_key)
-    else:
-        text, usage = await _call_anthropic(prompt, settings, api_key)
-    return _build_result(text, usage, settings, prompt, request, time.perf_counter() - started)
+        return await _call_openai(prompt, settings, api_key)
+    return await _call_anthropic(prompt, settings, api_key)
 
 
 async def _call_openai(prompt: RenderedPrompt, settings: Settings, api_key: str) -> tuple[str, TokenUsage | None]:
@@ -325,7 +342,7 @@ class EstimationStream:
     def __iter__(self) -> Iterator[str]:
         settings = self.settings
         prompt = self.prompt = build_prompt(self.request, settings)
-        api_key = _require_api_key(settings)
+        api_key = require_api_key(settings)
         logger.info(
             "Estimación en streaming con %s/%s, plantilla %s (%d caracteres de transcripción)",
             settings.llm_provider, settings.model, prompt.template.id, len(self.request.transcription),
@@ -343,7 +360,7 @@ class EstimationStream:
         text = "".join(chunks).strip()
         if not text:
             raise LLMProviderError(f"{settings.llm_provider} ha devuelto una respuesta vacía")
-        self.result = _build_result(text, usage, settings, prompt, self.request, time.perf_counter() - started)
+        self.result = build_result(text, usage, settings, prompt, self.request, time.perf_counter() - started)
 
 
 def _collecting(generator: Iterator[str], chunks: list[str]) -> Iterator[str]:

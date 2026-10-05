@@ -25,7 +25,7 @@ services:
         - action: rebuild
           path: ./pyproject.toml
 
-  # Formulario web (Streamlit), misma imagen y misma configuración que la API.
+  # Interfaz web (Streamlit), misma imagen. Habla con la API por HTTP (sesiones, memoria y adjuntos viven en la API).
   chat:
     build: .
     image: estimador-cag:latest
@@ -34,6 +34,10 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      API_BASE_URL: http://api:8000   # nombre del servicio en la red de compose (sobrescribe el .env)
+    depends_on:
+      - api
     ports:
       - "8501:8501"
     restart: unless-stopped

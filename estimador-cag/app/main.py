@@ -11,7 +11,8 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from app.config import Settings, get_settings
-from app.routers import estimations
+from app.routers import estimations, sessions
+from app.services.sessions import get_session_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -28,6 +29,12 @@ Los prompts son **plantillas versionadas** en `prompts/estimacion/<versión>/`, 
 `GET /api/v1/prompts` lista las versiones; `prompt_version` en la petición elige una concreta.
 
 Flujo: `parámetros + transcripción → plantilla vN (system + user) → LLM → estimación en Markdown`.
+
+**Sesiones conversacionales** (sesión 05): `POST /api/v1/sessions` crea una sesión y
+`POST /api/v1/sessions/{session_id}/estimate` (multipart/form-data) encadena turnos sobre el mismo proyecto,
+con **adjuntos** (PDF, Word, texto) cuyo texto se extrae localmente, un **historial con ventana deslizante**
+(`SESSION_MAX_TURNS`) y una **memoria del proyecto** (`project_metadata`) que se inyecta en el system prompt.
+Las sesiones viven en memoria del proceso.
 """
 
 settings = get_settings()
@@ -37,12 +44,14 @@ app = FastAPI(
     description=DESCRIPTION,
     version=settings.app_version,
     openapi_tags=[
-        {"name": "Estimaciones", "description": "Generación de estimaciones de software con un LLM."},
+        {"name": "Estimaciones", "description": "Generación de estimaciones de software con un LLM (una petición, una estimación)."},
+        {"name": "Sesiones", "description": "Conversaciones multi-turno con memoria del proyecto y adjuntos."},
         {"name": "Sistema", "description": "Estado y diagnóstico del servicio."},
     ],
 )
 
 app.include_router(estimations.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
 
 
 class HealthResponse(BaseModel):
@@ -53,6 +62,8 @@ class HealthResponse(BaseModel):
     model: str
     llm_configured: bool
     prompt_template: str
+    session_max_turns: int
+    active_sessions: int
     timestamp: datetime
 
 
@@ -67,5 +78,7 @@ async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         model=settings.model,
         llm_configured=settings.llm_configured,
         prompt_template=f"estimacion/{settings.prompt_version}",
+        session_max_turns=settings.session_max_turns,
+        active_sessions=len(get_session_store()),
         timestamp=datetime.now(timezone.utc),
     )

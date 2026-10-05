@@ -1,41 +1,47 @@
-"""Interfaz web (Streamlit) del Estimador CAG: un formulario con parámetros tipados.
+"""Interfaz web (Streamlit) del Estimador CAG: conversación multi-turno con memoria y adjuntos.
 
-Ejecutar:
+Ejecutar (con la API arrancada en API_BASE_URL, por defecto http://localhost:8000):
+    uv run uvicorn app.main:app --reload
     uv run streamlit run streamlit_app.py
 
-Sesión 04: el chat deja de ser la interfaz. Pedir una estimación es rellenar un formulario cuyos campos
-son exactamente los del modelo `EstimationRequest` (el mismo que valida el endpoint REST), y cada envío
-es una llamada independiente y reproducible: misma petición + misma versión de plantilla = mismo prompt.
-La estimación se muestra en streaming y con sus métricas de tokens, tiempo y coste.
-La API key se lee de `.env` (via `app.config`) o, si no está ahí, de `st.secrets`.
+Sesión 05: el formulario de la sesión 04 sigue siendo la forma de pedir una estimación (parámetros tipados,
+validados antes de gastar un token), pero ahora cada envío es un **turno** dentro de una **sesión**:
+la API recuerda el proyecto en curso (historial con ventana deslizante + `project_metadata`) y acepta
+**adjuntos** (PDF, Word, texto). La interfaz habla con la API por HTTP (`app/clients/estimator_api.py`):
+el estado vive en el proceso de la API, no aquí. La barra lateral muestra la memoria del proyecto y el
+historial efectivo para ver la diferencia entre lo que el sistema "sabe" y lo que viaja al LLM.
 """
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import streamlit as st
+from dotenv import load_dotenv
 from pydantic import ValidationError
 
-from app.config import Settings, get_settings
-from app.context.examples import ESTIMATION_EXAMPLES
+from app.clients.estimator_api import EstimatorAPI, EstimatorAPIError
 from app.schemas.estimation import (
     DETAIL_LEVEL_LABELS,
     ESTIMATION_MODE_LABELS,
     PROJECT_TYPE_LABELS,
     EstimationRequest,
 )
-from app.services.llm_service import EstimationResult, EstimationStream, LLMServiceError, build_prompt
-from app.services.prompts import PromptTemplateError, list_versions, load_template
 
 BASE_DIR = Path(__file__).resolve().parent
-PROVIDERS = ("openai", "anthropic")
+load_dotenv(BASE_DIR / ".env")  # API_BASE_URL puede venir del .env
+
 SAMPLES = {
     "Landing page con HubSpot (enunciado)": BASE_DIR / "transcripciones/reunion-landing-page.txt",
     "Panadería: descripción pobre": BASE_DIR / "transcripciones/panaderia-descripcion-pobre.txt",
     "Panadería: descripción detallada": BASE_DIR / "transcripciones/panaderia-descripcion-detallada.txt",
+    "Panadería: turno 2, cambios de alcance": BASE_DIR / "transcripciones/panaderia-turno-2-cambios.txt",
+    "Panadería: turno 3, adjunta la especificación": BASE_DIR / "transcripciones/panaderia-turno-3-adjunto.txt",
     "Restaurantes: reservas (reunión larga)": BASE_DIR / "transcripciones/reunion-app-reservas-restaurante.txt",
 }
+SAMPLE_ATTACHMENTS_DIR = BASE_DIR / "transcripciones/adjuntos"
+ACCEPTED_TYPES = ["pdf", "docx", "txt", "md"]
 FIELD_LABELS = {
     "transcription": "Transcripción",
     "project_name": "Nombre del proyecto",
@@ -47,62 +53,27 @@ FIELD_LABELS = {
     "prompt_version": "Versión de plantilla",
 }
 DEFAULTS = {name: field.default for name, field in EstimationRequest.model_fields.items()}
+PARAM_FIELDS = ("project_name", "project_type", "hourly_rate_eur", "deadline_weeks", "estimation_mode", "detail_level")
 
 
-# --- Configuración ---------------------------------------------------------------
+# --- Utilidades ---------------------------------------------------------------------
 
 
-def _secret(name: str) -> str | None:
-    """Lee un secreto de `.streamlit/secrets.toml`; None si no existe el archivo o la clave."""
-    try:
-        value = st.secrets.get(name)
-    except Exception:  # sin secrets.toml Streamlit lanza una excepción al acceder
-        return None
-    return str(value).strip() or None if value else None
+def api() -> EstimatorAPI:
+    if "api" not in st.session_state:
+        st.session_state.api = EstimatorAPI()
+    return st.session_state.api
 
 
-def resolve_settings() -> tuple[Settings, list[str]]:
-    """Settings del proyecto completados con `st.secrets`, y lista de proveedores con API key."""
-    base = get_settings()
-    keys = {
-        "openai": (base.openai_api_key or "").strip() or _secret("OPENAI_API_KEY"),
-        "anthropic": (base.anthropic_api_key or "").strip() or _secret("ANTHROPIC_API_KEY"),
-    }
-    settings = base.model_copy(update={"openai_api_key": keys["openai"], "anthropic_api_key": keys["anthropic"]})
-    return settings, [provider for provider in PROVIDERS if keys[provider]]
-
-
-def call_metadata(result: EstimationResult | None) -> dict | None:
-    if result is None:
-        return None
-    return {
-        "model": result.model,
-        "provider": result.provider,
-        "template": f"{result.prompt.template}/{result.prompt.version}" if result.prompt else None,
-        "input_tokens": result.usage.input_tokens if result.usage else None,
-        "output_tokens": result.usage.output_tokens if result.usage else None,
-        "cost_usd": result.cost.total_usd if result.cost else None,
-        "elapsed_seconds": result.elapsed_seconds,
-        "system_prompt_chars": result.prompt.system_prompt_chars if result.prompt else None,
-        "user_prompt_chars": result.prompt.user_prompt_chars if result.prompt else None,
-    }
-
-
-def format_metadata(meta: dict) -> str:
-    partes = [f"{meta['model']} ({meta['provider']})"]
-    if meta.get("template"):
-        partes.append(f"plantilla {meta['template']}")
-    if meta.get("input_tokens") is not None:
-        partes.append(f"{meta['input_tokens']:,} tokens de entrada · {meta['output_tokens']:,} de salida".replace(",", "."))
-    if meta.get("cost_usd") is not None:
-        partes.append(f"{meta['cost_usd']:.6f} USD")
-    if meta.get("elapsed_seconds") is not None:
-        partes.append(f"{meta['elapsed_seconds']:.1f} s")
-    return " · ".join(partes)
+def new_conversation() -> None:
+    """Crea una sesión nueva en la API y resetea el estado de la interfaz (botón "Nueva conversación")."""
+    created = api().create_session()
+    st.session_state.session_id = created["session_id"]
+    st.session_state.max_turns = created["max_turns"]
+    st.session_state.turns = []
 
 
 def format_validation_errors(exc: ValidationError) -> list[str]:
-    """Errores de Pydantic como frases legibles: 'Transcripción: String should have at least 20 characters'."""
     mensajes = []
     for error in exc.errors():
         campo = str(error["loc"][0]) if error["loc"] else "petición"
@@ -111,212 +82,336 @@ def format_validation_errors(exc: ValidationError) -> list[str]:
 
 
 def load_sample() -> None:
-    """Callback del selector de ejemplos: vuelca el texto elegido en el campo de transcripción."""
     name = st.session_state.get("sample")
-    if name in SAMPLES:
-        st.session_state["transcription"] = SAMPLES[name].read_text(encoding="utf-8").strip()
+    if name in SAMPLES and SAMPLES[name].is_file():
+        st.session_state["transcript"] = SAMPLES[name].read_text(encoding="utf-8").strip()
 
 
-# --- Estado de la sesión ---------------------------------------------------------
+def miles(n: int | float | None) -> str:
+    return "?" if n is None else f"{n:,.0f}".replace(",", ".")
+
+
+def call_metadata(response: dict, elapsed_seconds: float) -> dict:
+    usage = response.get("usage") or {}
+    cost = usage.get("cost") or {}
+    prompt = response.get("prompt") or {}
+    window = response.get("window") or {}
+    return {
+        "model": response.get("model"),
+        "provider": response.get("provider"),
+        "template": f"{prompt.get('template')}/{prompt.get('version')}" if prompt else None,
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "cost_usd": cost.get("total_usd"),
+        "elapsed_seconds": elapsed_seconds,
+        "system_prompt_chars": prompt.get("system_prompt_chars"),
+        "user_prompt_chars": prompt.get("user_prompt_chars"),
+        "messages_sent": window.get("messages_sent"),
+        "turns_in_window": window.get("turns_in_window"),
+        "dropped_turns": window.get("dropped_turns"),
+    }
+
+
+def format_metadata(meta: dict) -> str:
+    partes = [f"{meta['model']} ({meta['provider']})"]
+    if meta.get("template"):
+        partes.append(f"plantilla {meta['template']}")
+    if meta.get("messages_sent") is not None:
+        partes.append(f"{meta['messages_sent']} mensajes al LLM")
+    if meta.get("input_tokens") is not None:
+        partes.append(f"{miles(meta['input_tokens'])} tokens de entrada · {miles(meta['output_tokens'])} de salida")
+    if meta.get("cost_usd") is not None:
+        partes.append(f"{meta['cost_usd']:.6f} USD")
+    if meta.get("elapsed_seconds") is not None:
+        partes.append(f"{meta['elapsed_seconds']:.1f} s")
+    return " · ".join(partes)
+
+
+def render_project_metadata(metadata: dict) -> None:
+    """La memoria del proyecto tal y como se inyecta en el system prompt (vacía en el primer turno)."""
+    team = metadata.get("assumed_team")
+    if team and metadata.get("assumed_team_size"):
+        team = f"{team} ({metadata['assumed_team_size']} personas)"
+    rows = [
+        ("Proyecto", metadata.get("project_name")),
+        ("Tipo", PROJECT_TYPE_LABELS.get(metadata.get("project_type") or "", None)),
+        ("Alcance acordado", metadata.get("agreed_scope")),
+        ("Tecnologías", ", ".join(metadata.get("mentioned_technologies") or [])),
+        ("Equipo asumido", team),
+        ("Última estimación", f"{metadata['last_total_hours']:g} horas" if metadata.get("last_total_hours") else None),
+        ("Tarifa", f"{metadata['hourly_rate_eur']:g} €/hora" if metadata.get("hourly_rate_eur") else None),
+        ("Plazo objetivo", f"{metadata['deadline_weeks']} semanas" if metadata.get("deadline_weeks") else None),
+        ("Documentos", ", ".join(metadata.get("attached_documents") or [])),
+    ]
+    present = [(label, value) for label, value in rows if value]
+    if not present:
+        st.caption("Vacía: se rellena con la primera estimación de la sesión.")
+        return
+    for label, value in present:
+        st.markdown(f"**{label}:** {value}")
+    with st.expander("JSON (lo que recibe la plantilla)"):
+        st.json(metadata)
+
+
+def render_turn(index: int, turn: dict) -> None:
+    with st.container(border=True):
+        st.markdown(f"**Turno {index}**")
+        adjuntos = turn.get("attachments") or []
+        resumen = f"Transcripción enviada ({miles(len(turn['transcript']))} caracteres)"
+        if adjuntos:
+            resumen += f" · {len(adjuntos)} adjunto(s): " + ", ".join(a["filename"] for a in adjuntos)
+        with st.expander(resumen):
+            st.text(turn["transcript"])
+            for a in adjuntos:
+                detalle = f"{a['kind']}, {miles(a['chars'])} caracteres extraídos"
+                if a.get("pages"):
+                    detalle += f", {a['pages']} páginas"
+                if a.get("truncated"):
+                    detalle += ", truncado"
+                st.caption(f"📎 {a['filename']} ({detalle})")
+                if a.get("warning"):
+                    st.warning(a["warning"])
+        st.markdown(turn["estimation"])
+        if turn.get("meta"):
+            st.caption(format_metadata(turn["meta"]))
+
+
+# --- Estado y conexión con la API ---------------------------------------------------------
 
 st.set_page_config(page_title="Estimador CAG", page_icon="🧮", layout="wide")
 
-if "last" not in st.session_state:
-    st.session_state.last = None  # {"request": dict, "estimation": str, "meta": dict}
-
-settings, available_providers = resolve_settings()
-
-
-# --- Barra lateral: proveedor, plantilla de prompt y contexto CAG --------------------
-
-with st.sidebar:
-    st.header("Configuración")
-    if available_providers:
-        default = settings.llm_provider if settings.llm_provider in available_providers else available_providers[0]
-        provider = st.selectbox(
-            "Proveedor",
-            options=available_providers,
-            index=available_providers.index(default),
-            help="Solo aparecen los proveedores con API key configurada en .env o en st.secrets.",
-        )
-        settings = settings.model_copy(update={"llm_provider": provider})
-    st.caption(f"Modelo: `{settings.model}` · temperatura {settings.llm_temperature} · máx. {settings.llm_max_tokens} tokens")
-
-    st.divider()
-    st.subheader("Plantilla de prompt")
-    versions = list_versions()
-    default_version = settings.prompt_version if settings.prompt_version in versions else versions[-1]
-    prompt_version = st.selectbox(
-        "Versión",
-        key="prompt_version",
-        options=versions,
-        index=versions.index(default_version),
-        format_func=lambda v: f"{v} (por defecto)" if v == settings.prompt_version else v,
-        help="Cada versión es una carpeta en prompts/estimacion/. La versión por defecto se fija con PROMPT_VERSION.",
-    )
-    template = load_template("estimacion", prompt_version)
-    st.caption(template.description)
-    if template.created:
-        st.caption(f"Creada el {template.created.isoformat()}")
-    with st.expander("Changelog"):
-        for line in template.changelog:
-            st.markdown(f"- {line}")
-    with st.expander("Plantilla system.md.j2"):
-        st.code(template.system_source, language="jinja2", wrap_lines=True)
-    with st.expander("Plantilla user.md.j2"):
-        st.code(template.user_source, language="jinja2", wrap_lines=True)
-
-    st.divider()
-    st.subheader("Contexto CAG")
-    with st.expander(f"Contexto estático inyectado ({len(ESTIMATION_EXAMPLES)} estimaciones de ejemplo)"):
-        for indice, ejemplo in enumerate(ESTIMATION_EXAMPLES, start=1):
-            st.markdown(f"**Ejemplo {indice} · Reunión:** {ejemplo['meeting_summary']}")
-            st.markdown(ejemplo["estimation"])
-            st.divider()
+try:
+    health = api().health()
+    if "session_id" not in st.session_state:
+        new_conversation()
+    if "params" not in st.session_state:
+        st.session_state.params = {name: DEFAULTS[name] for name in PARAM_FIELDS}
+    if "uploader_round" not in st.session_state:
+        st.session_state.uploader_round = 0
+    prompts_info = api().prompts()
+except EstimatorAPIError as exc:
+    st.error(str(exc))
+    st.stop()
 
 
-# --- Formulario -----------------------------------------------------------------
+# --- Conversación: turnos anteriores y formulario del turno siguiente -------------------------
 
 st.title("🧮 Estimador CAG")
 st.caption(
-    "Rellena los parámetros y pega la transcripción de la reunión: cada envío es una estimación independiente "
-    "y reproducible. El contexto (estimaciones de ejemplo) viaja en cada llamada: arquitectura CAG."
+    "Conversación con memoria: cada envío es un turno sobre el mismo proyecto. La API conserva los últimos "
+    f"{st.session_state.max_turns} turnos (ventana deslizante) y una memoria con los hechos del proyecto que "
+    "inyecta en el system prompt. Los adjuntos (PDF, Word, texto) se leen en el servidor y se añaden a la transcripción."
 )
 
-if not settings.api_key:
-    st.error(
-        f"No hay API key para el proveedor `{settings.llm_provider}`. Define `{settings.api_key_env_var}` "
-        "en `.env` o en `.streamlit/secrets.toml` y recarga la página."
-    )
+turns_area = st.container()
+
+if st.session_state.pop("clear_form", False):
+    # Tras un turno con éxito se vacía la transcripción y el selector de ejemplos. No se usa
+    # `clear_on_submit`: impedía cargar un ejemplo en el turno siguiente y no vacía el file_uploader.
+    st.session_state["transcript"] = ""
+    st.session_state["sample"] = "(ninguna)"
 
 st.selectbox(
     "Cargar una transcripción de ejemplo",
-    options=["(ninguna)", *SAMPLES],
+    options=["(ninguna)", *[name for name, path in SAMPLES.items() if path.is_file()]],
     key="sample",
     on_change=load_sample,
-    help="Rellena el campo de transcripción con uno de los ejemplos del proyecto. Puedes editarlo antes de enviar.",
+    help="Las de 'Panadería' forman una conversación de tres turnos: detallada → cambios → especificación adjunta.",
 )
 
-with st.form("estimacion", border=True):
-    transcription = st.text_area(
-        "Transcripción de la reunión",
-        key="transcription",
-        height=220,
-        placeholder="Pega aquí la transcripción de la reunión con el cliente (mínimo 20 caracteres)…",
+params = st.session_state.params
+with st.form("turno", border=True):
+    transcript = st.text_area(
+        "Transcripción de la reunión (o lo nuevo de este turno)",
+        key="transcript",
+        height=200,
+        placeholder="Pega aquí la transcripción, o lo que ha cambiado desde el turno anterior (mínimo 20 caracteres)…",
     )
-    col_nombre, col_tipo = st.columns(2)
-    project_name = col_nombre.text_input(
-        "Nombre del proyecto (opcional)",
-        max_chars=100,
-        placeholder="Si lo dejas vacío, el modelo lo deduce",
+    uploads = st.file_uploader(
+        "Adjuntos: especificaciones, propuestas anteriores, diagramas (PDF, Word .docx, .txt, .md)",
+        key=f"uploads_{st.session_state.uploader_round}",  # una key nueva por turno vacía el selector de ficheros
+        type=ACCEPTED_TYPES,
+        accept_multiple_files=True,
+        help=f"Hay ejemplos en {SAMPLE_ATTACHMENTS_DIR.relative_to(BASE_DIR)}/ (genéralos con scripts/generar-adjuntos.py).",
     )
-    project_type = col_tipo.selectbox(
-        "Tipo de proyecto",
-        options=[None, *PROJECT_TYPE_LABELS],
-        format_func=lambda v: "Que lo deduzca el modelo" if v is None else PROJECT_TYPE_LABELS[v],
-    )
-    col_tarifa, col_plazo, col_enfoque = st.columns(3)
-    hourly_rate_eur = col_tarifa.number_input(
-        "Tarifa (€/hora)", min_value=1.0, max_value=1000.0, value=float(DEFAULTS["hourly_rate_eur"]), step=5.0
-    )
-    deadline_weeks = col_plazo.number_input(
-        "Plazo objetivo (semanas)", min_value=0, max_value=104, value=0, step=1, help="0 = sin plazo objetivo"
-    )
-    estimation_mode = col_enfoque.selectbox(
-        "Enfoque",
-        options=list(ESTIMATION_MODE_LABELS),
-        index=list(ESTIMATION_MODE_LABELS).index(DEFAULTS["estimation_mode"]),
-        format_func=ESTIMATION_MODE_LABELS.get,
-    )
-    detail_level = st.radio(
-        "Nivel de detalle",
-        options=list(DETAIL_LEVEL_LABELS),
-        index=list(DETAIL_LEVEL_LABELS).index(DEFAULTS["detail_level"]),
-        format_func=DETAIL_LEVEL_LABELS.get,
-        horizontal=True,
-    )
+    with st.expander("Parámetros de la estimación", expanded=not st.session_state.turns):
+        col_nombre, col_tipo = st.columns(2)
+        project_name = col_nombre.text_input(
+            "Nombre del proyecto (opcional)",
+            max_chars=100,
+            placeholder="Si lo dejas vacío, el modelo lo deduce; a partir del segundo turno lo recuerda la memoria",
+        )
+        tipos = [None, *PROJECT_TYPE_LABELS]
+        project_type = col_tipo.selectbox(
+            "Tipo de proyecto",
+            options=tipos,
+            index=tipos.index(params.get("project_type")) if params.get("project_type") in tipos else 0,
+            format_func=lambda v: "Que lo deduzca el modelo" if v is None else PROJECT_TYPE_LABELS[v],
+        )
+        col_tarifa, col_plazo, col_enfoque = st.columns(3)
+        hourly_rate_eur = col_tarifa.number_input(
+            "Tarifa (€/hora)", min_value=1.0, max_value=1000.0, value=float(params["hourly_rate_eur"]), step=5.0
+        )
+        deadline_weeks = col_plazo.number_input(
+            "Plazo objetivo (semanas)", min_value=0, max_value=104, value=int(params.get("deadline_weeks") or 0), step=1,
+            help="0 = sin plazo objetivo",
+        )
+        modos = list(ESTIMATION_MODE_LABELS)
+        estimation_mode = col_enfoque.selectbox(
+            "Enfoque", options=modos, index=modos.index(params["estimation_mode"]), format_func=ESTIMATION_MODE_LABELS.get
+        )
+        niveles = list(DETAIL_LEVEL_LABELS)
+        detail_level = st.radio(
+            "Nivel de detalle", options=niveles, index=niveles.index(params["detail_level"]),
+            format_func=DETAIL_LEVEL_LABELS.get, horizontal=True,
+        )
+    # La etiqueta no depende del estado: si cambiara entre ejecuciones, el clic llegaría con el id del botón
+    # anterior y Streamlit lo descartaría (el turno se perdería).
     submitted = st.form_submit_button(
-        "Generar estimación", type="primary", use_container_width=True, disabled=not settings.api_key
+        "Enviar turno y estimar", type="primary", use_container_width=True, disabled=not health.get("llm_configured")
     )
-
-
-# --- Envío: validación tipada, streaming y métricas ----------------------------------
-
-
-def render_result(request: EstimationRequest, estimation: str, meta: dict | None, settings: Settings) -> None:
-    if meta:
-        st.caption(format_metadata(meta))
-    st.download_button(
-        "Descargar estimación (.md)",
-        data=estimation,
-        file_name=f"estimacion-{(request.project_name or 'proyecto').lower().replace(' ', '-')}.md",
-        mime="text/markdown",
-    )
-    try:
-        prompt = build_prompt(request, settings)
-    except PromptTemplateError as exc:
-        st.warning(f"No se pudo reconstruir el prompt enviado: {exc}")
-        return
-    with st.expander(f"Prompt enviado (plantilla {prompt.template.id})"):
-        st.markdown(f"**System prompt** · {len(prompt.system):,} caracteres (contexto fijo)".replace(",", "."))
-        st.code(prompt.system, language="markdown", wrap_lines=True)
-        st.markdown(f"**Mensaje de usuario** · {len(prompt.user):,} caracteres (parámetros + transcripción)".replace(",", "."))
-        st.code(prompt.user, language="markdown", wrap_lines=True)
-
 
 if submitted:
     try:
         request = EstimationRequest(
-            transcription=transcription,
+            transcription=transcript,
             project_name=project_name,
             project_type=project_type,
             hourly_rate_eur=hourly_rate_eur,
             deadline_weeks=deadline_weeks or None,
             estimation_mode=estimation_mode,
             detail_level=detail_level,
-            prompt_version=prompt_version,
+            prompt_version=st.session_state.get("prompt_version") or prompts_info["default_version"],
         )
     except ValidationError as exc:
         for mensaje in format_validation_errors(exc):
             st.error(mensaje)
     else:
-        with st.container(border=True):
-            st.subheader("Estimación")
-            stream = EstimationStream(request, settings)
+        request_params = request.model_dump(exclude={"transcription"})
+        st.session_state.params = {name: request_params[name] for name in PARAM_FIELDS if name != "project_name"}
+        attachments = [(f.name, f.getvalue(), f.type) for f in (uploads or [])]
+        with st.spinner("Estimando… (la API lee los adjuntos, regenera el system prompt con la memoria y llama al LLM)"):
+            started = time.perf_counter()
             try:
-                estimation = st.write_stream(stream)  # se va pintando fragmento a fragmento
-            except (LLMServiceError, PromptTemplateError) as exc:
-                st.error(str(exc))
-                estimation = None
-            if estimation:
-                meta = call_metadata(stream.result)
-                st.session_state.last = {"request": request.model_dump(), "estimation": estimation, "meta": meta}
-                render_result(request, estimation, meta, settings)
-elif st.session_state.last:
-    last = st.session_state.last
-    with st.container(border=True):
-        st.subheader("Última estimación")
-        st.markdown(last["estimation"])
-        render_result(EstimationRequest(**last["request"]), last["estimation"], last["meta"], settings)
+                response = api().estimate(st.session_state.session_id, request.transcription, request_params, attachments)
+            except EstimatorAPIError as exc:
+                response = None
+                if exc.status_code == 404:  # la API se reinició y perdió la sesión (vive en memoria del proceso)
+                    st.warning("La sesión ya no existe en la API (¿se reinició?). Se ha creado una nueva: vuelve a enviar.")
+                    new_conversation()
+                else:
+                    st.error(str(exc))
+        if response:
+            st.session_state.turns.append(
+                {
+                    "transcript": request.transcription,
+                    "attachments": response.get("attachments") or [],
+                    "estimation": response["estimation"],
+                    "meta": call_metadata(response, time.perf_counter() - started),
+                    "project_metadata": response.get("project_metadata") or {},
+                    "params": request_params,
+                }
+            )
+            st.session_state.clear_form = True
+            st.session_state.uploader_round += 1
+            st.rerun()  # vuelve a pintar con el turno nuevo, el formulario vacío y los paneles actualizados
+
+with turns_area:
+    for index, turn in enumerate(st.session_state.turns, start=1):
+        render_turn(index, turn)
+    if st.session_state.turns:
+        last = st.session_state.turns[-1]
+        st.download_button(
+            "Descargar la última estimación (.md)",
+            data=last["estimation"],
+            file_name=f"estimacion-{(last['project_metadata'].get('project_name') or 'proyecto').lower().replace(' ', '-')}.md",
+            mime="text/markdown",
+        )
 
 
-# --- Métricas de la última llamada -------------------------------------------------
+# --- Barra lateral (se renderiza al final para reflejar el turno recién procesado) --------------------
+
+with st.sidebar:
+    st.header("Conversación")
+    st.caption(
+        f"Sesión `{st.session_state.session_id[:8]}…` · {len(st.session_state.turns)} turno(s) · "
+        f"ventana de {st.session_state.max_turns} turnos"
+    )
+    st.button(
+        "🆕 Nueva conversación",
+        on_click=new_conversation,
+        use_container_width=True,
+        help="Crea otra sesión en la API (POST /api/v1/sessions): historial y memoria vuelven a cero.",
+    )
+
+    st.divider()
+    st.subheader("Servicio")
+    st.caption(f"API: `{api().base_url}` · modelo `{health['model']}` ({health['provider']})")
+    if not health.get("llm_configured"):
+        st.error("La API no tiene API key configurada: define OPENAI_API_KEY o ANTHROPIC_API_KEY en su .env.")
+    versions = [t["version"] for t in prompts_info["templates"]]
+    default_version = prompts_info["default_version"] if prompts_info["default_version"] in versions else versions[-1]
+    prompt_version = st.selectbox(
+        "Versión de plantilla",
+        key="prompt_version",
+        options=versions,
+        index=versions.index(default_version),
+        format_func=lambda v: f"{v} (por defecto)" if v == prompts_info["default_version"] else v,
+        help="v3 inyecta la memoria del proyecto en el system prompt; v1 y v2 solo usan el historial.",
+    )
+    template = next(t for t in prompts_info["templates"] if t["version"] == prompt_version)
+    st.caption(template["description"])
+    with st.expander("Changelog"):
+        for line in template["changelog"]:
+            st.markdown(f"- {line}")
+
+# --- Barra lateral (final): memoria, historial efectivo y métricas de la última llamada ----------
+
+try:
+    state = api().get_session(st.session_state.session_id)
+except EstimatorAPIError as exc:
+    state = None
+    if exc.status_code == 404:
+        new_conversation()
+        st.rerun()
 
 with st.sidebar:
     st.divider()
+    st.subheader("Memoria del proyecto")
+    st.caption("`project_metadata`: hechos extraídos de cada turno; van en el bloque `<project_metadata>` del system prompt.")
+    render_project_metadata(state["project_metadata"] if state else {})
+
+    st.divider()
+    st.subheader("Historial efectivo")
+    if state:
+        window = state["window"]
+        st.caption(
+            f"Ventana de {window['max_turns']} turnos · {window['turns_in_window']} en ventana · "
+            f"{window['dropped_turns']} descartados · {state['turn_count']} turnos en total"
+        )
+        with st.expander(f"Mensajes que viajarían al LLM ({len(state['history'])}, sin el system prompt)"):
+            if not state["history"]:
+                st.caption("Vacío.")
+            for message in state["history"]:
+                icono = "🧑" if message["role"] == "user" else "🤖"
+                preview = message["content"].strip().replace("\n", " ")
+                st.markdown(f"{icono} `{message['role']}` · {miles(message['chars'])} caracteres")
+                st.caption(preview[:160] + ("…" if len(preview) > 160 else ""))
+
+    st.divider()
     st.subheader("Última llamada")
-    last_meta = st.session_state.last["meta"] if st.session_state.last else None
+    last_meta = st.session_state.turns[-1]["meta"] if st.session_state.turns else None
     if not last_meta:
-        st.caption("Aún no se ha generado ninguna estimación.")
+        st.caption("Aún no se ha generado ninguna estimación en esta sesión.")
     else:
         st.caption(f"Modelo: `{last_meta['model']}` ({last_meta['provider']}) · plantilla `{last_meta['template']}`")
         col1, col2 = st.columns(2)
-        col1.metric("Tokens de entrada", f"{last_meta['input_tokens']:,}".replace(",", ".") if last_meta["input_tokens"] is not None else "?")
-        col2.metric("Tokens de salida", f"{last_meta['output_tokens']:,}".replace(",", ".") if last_meta["output_tokens"] is not None else "?")
+        col1.metric("Tokens de entrada", miles(last_meta["input_tokens"]))
+        col2.metric("Tokens de salida", miles(last_meta["output_tokens"]))
         col1.metric("Tiempo", f"{last_meta['elapsed_seconds']:.1f} s" if last_meta["elapsed_seconds"] is not None else "?")
         col2.metric("Coste", f"{last_meta['cost_usd']:.6f} $" if last_meta["cost_usd"] is not None else "?")
-        if last_meta.get("system_prompt_chars"):
+        if last_meta.get("messages_sent"):
             st.caption(
-                f"Prompt: {last_meta['system_prompt_chars']:,} caracteres fijos (system) + "
-                f"{last_meta['user_prompt_chars']:,} variables (user)".replace(",", ".")
+                f"{last_meta['messages_sent']} mensajes al LLM · system prompt {miles(last_meta['system_prompt_chars'])} "
+                f"caracteres · mensaje de usuario {miles(last_meta['user_prompt_chars'])}"
             )

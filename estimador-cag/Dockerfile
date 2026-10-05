@@ -16,12 +16,14 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-# 2) El código: API (app/), plantillas de prompt (prompts/) y formulario (streamlit_app.py + .streamlit/config.toml).
+# 2) El código: API (app/), plantillas de prompt (prompts/), interfaz (streamlit_app.py + .streamlit/config.toml)
+#    y las transcripciones y adjuntos de ejemplo que carga la interfaz.
 #    El .env NO se copia (ver .dockerignore): llega como variables de entorno por docker compose.
 COPY app ./app
 COPY prompts ./prompts
 COPY streamlit_app.py ./
 COPY .streamlit/config.toml ./.streamlit/config.toml
+COPY transcripciones ./transcripciones
 
 # Usuario sin privilegios
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app

@@ -1,0 +1,1 @@
+El cliente nos envía la especificación técnica que ha preparado con su sobrino (que es informático) y la propuesta económica que les hizo otra consultora en marzo y que descartaron. Piden que revisemos la estimación con ambos documentos: la especificación fija el alcance definitivo y la propuesta anterior sirve de referencia para ver por qué les pareció cara e incompleta.

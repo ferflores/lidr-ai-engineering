@@ -1,14 +1,20 @@
-# Estimador CAG — Proyecto 1 (Sesiones 02, 03 y 04)
+# Estimador CAG — Proyecto 1 (Sesiones 02, 03, 04 y pre-work 05)
 
 Servicio **FastAPI** que recibe la transcripción de una reunión con un cliente más unos **parámetros
 tipados** (tarifa, tipo de proyecto, plazo, enfoque, nivel de detalle) y devuelve una **estimación de
 software** (desglose de tareas, horas, coste, equipo y duración) generada por un LLM (**OpenAI** o
-**Anthropic**). La interfaz es un **formulario en Streamlit** que muestra la estimación en streaming
-(sesión 04; en la 03 era un chat). Los prompts son **plantillas versionadas** en `prompts/`, fuera del
-código.
+**Anthropic**). Los prompts son **plantillas versionadas** en `prompts/`, fuera del código.
+
+Desde el pre-work de la **sesión 05** el estimador deja de ser solo transaccional: una **sesión**
+(`POST /api/v1/sessions`) encadena varios turnos sobre el mismo proyecto con **memoria conversacional**
+(historial con ventana deslizante + `project_metadata` inyectado en el system prompt) y acepta
+**adjuntos** PDF, Word y texto cuyo contenido se extrae localmente. La interfaz es un **formulario en
+Streamlit** que ahora habla con la API por HTTP y muestra la memoria y el historial efectivo en un panel.
+Ver [Sesiones conversacionales con memoria y adjuntos](#sesiones-conversacionales-con-memoria-y-adjuntos-pre-work-sesión-05).
 
 Arquitectura **CAG**: todo el contexto que necesita el modelo (estimaciones de ejemplo) viaja íntegro
-dentro del prompt en cada llamada. No hay base de datos, ni retrieval, ni persistencia.
+dentro del prompt en cada llamada. No hay base de datos ni retrieval; el único estado es el de las
+sesiones, en memoria del proceso.
 
 ## Cómo funciona
 
@@ -31,7 +37,26 @@ app/services/llm_service.py ─ renderiza la plantilla y construye los mensajes:
 OpenAI (gpt-4o-mini)  ó  Anthropic (claude-haiku-4-5)      ◄── LLM_PROVIDER
         │
         ▼
-{ "estimation": "## Estimación: ...", "usage": {...}, "prompt": { "template": "estimacion", "version": "v2", ... } }
+{ "estimation": "## Estimación: ...", "usage": {...}, "prompt": { "template": "estimacion", "version": "v3", ... } }
+```
+
+Y el flujo conversacional (pre-work sesión 05), donde la interfaz habla con la API por HTTP:
+
+```
+POST /api/v1/sessions                      → { "session_id": "<uuid4>", "max_turns": 6 }
+POST /api/v1/sessions/{id}/estimate        multipart/form-data: transcript + parámetros + attachments[]
+        │
+        ▼
+app/services/attachments.py ─ extrae el texto de PDF (pypdf), Word (python-docx) y .txt/.md y lo concatena
+        │                     a la transcripción con separadores "--- attachment: <fichero> ---"
+        ▼
+app/services/conversation.py ─ un turno:
+        system  = plantilla v3 con la MEMORIA del proyecto (<project_metadata>) al final      ◄── ProjectMetadata
+        history = últimos N turnos de la sesión (ventana deslizante, N = SESSION_MAX_TURNS)    ◄── ConversationHistory
+        user    = parámetros + transcripción (+ adjuntos)
+        → LLM → estimación → se guarda el turno → metadata_extractor actualiza la memoria
+        ▼
+{ ...misma respuesta que /estimate..., "session_id", "turn", "window": {...}, "project_metadata": {...}, "attachments": [...] }
 ```
 
 ## Estructura
@@ -43,23 +68,33 @@ estimador-cag/
 │   ├── config.py               # Settings (pydantic-settings) cargados desde .env, incluida PROMPT_VERSION
 │   ├── schemas/estimation.py   # EstimationRequest: los parámetros tipados (contrato de API y formulario)
 │   ├── routers/estimations.py  # POST /api/v1/estimate, GET /api/v1/prompts + schemas de respuesta
+│   ├── routers/sessions.py     # POST /api/v1/sessions, GET|DELETE /sessions/{id}, POST /sessions/{id}/estimate (multipart)
 │   ├── services/prompts.py     # registro de plantillas: carga prompts/<nombre>/<versión>/ y las renderiza
-│   ├── services/llm_service.py # renderiza la plantilla, inyecta los ejemplos y llama al LLM (sin texto de prompt)
+│   ├── services/llm_service.py # renderiza la plantilla (con memoria e historial) y llama al LLM (sin texto de prompt)
+│   ├── services/sessions.py    # ConversationHistory (ventana deslizante), ProjectMetadata (memoria), Session, SessionStore
+│   ├── services/attachments.py # extracción local de texto de PDF / Word / texto (camino B) y concatenación al transcript
+│   ├── services/metadata_extractor.py  # heurística que actualiza project_metadata tras cada turno
+│   ├── services/conversation.py        # orquesta un turno: adjuntos → prompt con memoria → LLM → historial → memoria
 │   ├── services/pricing.py     # precios por millón de tokens y cálculo del coste de cada llamada
+│   ├── clients/estimator_api.py        # cliente HTTP de la API que usa la interfaz de Streamlit
 │   └── context/examples.py     # estimaciones de ejemplo (el "conocimiento" del sistema)
 ├── prompts/                    # los prompts, fuera del código y versionados (ver prompts/README.md)
 │   └── estimacion/
 │       ├── v1/                 # template.toml + system.md.j2 + user.md.j2 (el prompt original, migrado)
-│       └── v2/                 # parámetros tipados en el mensaje de usuario, system prompt estable (por defecto)
-├── streamlit_app.py            # formulario con parámetros tipados, streaming, prompt enviado y métricas
+│       ├── v2/                 # parámetros tipados en el mensaje de usuario, system prompt estable
+│       └── v3/                 # v2 + conversación con memoria: bloque <project_metadata> al final (por defecto)
+├── streamlit_app.py            # conversación por turnos: formulario + adjuntos, panel de memoria e historial, "Nueva conversación"
 ├── .streamlit/                 # config.toml (headless) y secrets.toml.example (alternativa a .env)
-├── tests/                      # pytest: API, plantillas, contexto, proveedores, streaming y el formulario (LLM simulado)
+├── tests/                      # pytest: API, sesiones (httpx.AsyncClient), adjuntos, extractor, plantillas, streaming e interfaz
 ├── scripts/
 │   ├── estimar.sh              # envía una transcripción (con o sin parámetros) al endpoint con curl
+│   ├── estimar-sesion.sh       # conversación de tres turnos con curl (el tercero con PDF y Word adjuntos)
+│   ├── generar-adjuntos.py     # genera transcripciones/adjuntos/*.pdf y *.docx de ejemplo
 │   ├── comparar.py             # compara transcripciones: tokens, coste, ahorro y estimación
 │   ├── generar-json.sh         # crea transcripciones/*.json a partir de los .txt
-│   └── verificar.sh            # estructura + tests + arranque real (lo usa el CI)
-├── transcripciones/            # transcripciones de ejemplo (.txt legible, .json listo para curl, *-parametros.json con parámetros)
+│   └── verificar.sh            # estructura + tests + arranque real + sesiones (lo usa el CI)
+├── transcripciones/            # transcripciones de ejemplo (.txt, .json para curl, panaderia-turno-2/3 para la conversación)
+│   └── adjuntos/               # especificación técnica (PDF) y propuesta anterior (Word) de la panadería
 ├── docs/                       # comparativa de resultados (transcripción pobre vs. detallada)
 ├── Dockerfile                  # imagen basada en uv + Python 3.11 (copia app/, prompts/ y streamlit_app.py)
 ├── docker-compose.yml          # arranque con Docker, lee .env sin copiarlo a la imagen
@@ -88,10 +123,17 @@ uv run uvicorn app.main:app --reload     # http://localhost:8000
 - Swagger UI: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/health>
 
-Formulario web (ver "Formulario con parámetros tipados"):
+Interfaz web (ver "Interfaz: conversación por turnos"). Necesita la API arrancada, porque las sesiones
+viven en el proceso de la API (`API_BASE_URL`, por defecto `http://localhost:8000`):
 
 ```bash
 uv run streamlit run streamlit_app.py    # http://localhost:8501
+```
+
+Conversación de tres turnos por curl (crea sesión, dos turnos de texto y un tercero con PDF y Word adjuntos):
+
+```bash
+scripts/estimar-sesion.sh                # genera los adjuntos de ejemplo si no existen
 ```
 
 ## Ejecutar con Docker
@@ -103,7 +145,8 @@ docker compose logs -f api chat      # ver los logs
 docker compose down                  # parar
 ```
 
-Levanta dos servicios con la misma imagen: `api` (FastAPI, puerto 8000) y `chat` (el formulario de Streamlit, puerto 8501).
+Levanta dos servicios con la misma imagen: `api` (FastAPI, puerto 8000) y `chat` (la interfaz de Streamlit, puerto
+8501, que llama a la API como `http://api:8000` dentro de la red de compose).
 
 Lanzar estimaciones por curl contra el contenedor:
 
@@ -141,7 +184,13 @@ Cómo está montado:
 | `ANTHROPIC_API_KEY` | API key de Anthropic (si `LLM_PROVIDER=anthropic`) | — |
 | `OPENAI_MODEL` | Modelo de OpenAI | `gpt-4o-mini` |
 | `ANTHROPIC_MODEL` | Modelo de Anthropic | `claude-haiku-4-5` |
-| `PROMPT_VERSION` | Versión de la plantilla de prompt por defecto (`prompts/estimacion/<versión>`) | `v2` |
+| `PROMPT_VERSION` | Versión de la plantilla de prompt por defecto (`prompts/estimacion/<versión>`) | `v3` |
+| `SESSION_MAX_TURNS` | Turnos (par user+assistant) que conserva la ventana deslizante de cada sesión | `6` |
+| `SESSION_MAX_SESSIONS` | Tope de sesiones vivas en memoria del proceso (se expulsa la menos reciente) | `500` |
+| `ATTACHMENT_MAX_FILES` | Adjuntos máximos por petición | `5` |
+| `ATTACHMENT_MAX_BYTES` | Tamaño máximo de cada adjunto | `10485760` (10 MB) |
+| `ATTACHMENT_MAX_CHARS` | Caracteres de texto extraído que se conservan por adjunto (el resto se recorta y se avisa) | `20000` |
+| `API_BASE_URL` | URL de la API para la interfaz de Streamlit | `http://localhost:8000` |
 | `LLM_TEMPERATURE` | Temperatura del modelo (0-2) | `0.2` |
 | `LLM_MAX_TOKENS` | Máximo de tokens de salida | `4096` |
 | `LLM_TIMEOUT_SECONDS` | Timeout de la llamada al proveedor | `60` |
@@ -251,15 +300,279 @@ y cuál es la de por defecto.
 Códigos de respuesta: `200` estimación generada · `422` body inválido o versión de plantilla inexistente ·
 `500` falta la API key · `502` el proveedor ha fallado.
 
-## Formulario con parámetros tipados (Streamlit)
+## Sesiones conversacionales con memoria y adjuntos (pre-work sesión 05)
 
-`streamlit_app.py`, en la raíz del proyecto, es la interfaz del estimador. En la sesión 03 era un chat;
-en la 04 el chat deja de ser la interfaz principal y se sustituye por un **formulario** cuyos campos son
-exactamente los de `EstimationRequest`, el mismo modelo que valida el endpoint.
+Hasta la sesión 04 el estimador era transaccional: una transcripción entra, una estimación sale. En una
+empresa real el cliente refina el alcance en varias reuniones, manda documentos y espera que el sistema
+recuerde de qué proyecto se habla. El pre-work de la sesión 05 añade eso con dos piezas separadas a
+conciencia:
+
+| | Qué es | Dónde vive | Cómo viaja al LLM |
+|---|---|---|---|
+| **Historial** | Los mensajes `user`/`assistant` de los turnos anteriores, en bruto | `ConversationHistory` (`app/services/sessions.py`) | En el array `messages`, recortado por una **ventana deslizante** de `SESSION_MAX_TURNS` turnos (por defecto 6; un turno es un par user+assistant) |
+| **Memoria** | Los hechos del proyecto en curso: nombre, tipo, alcance acordado, tecnologías, equipo asumido, última estimación, tarifa, plazo, documentos | `ProjectMetadata` (Pydantic, mismo módulo) | En el bloque `<project_metadata>` **al final del system prompt** (plantilla `v3`), regenerado en cada turno |
+
+La diferencia operativa: el historial es texto que crece y se descarta (cuando el turno 1 sale de la
+ventana, el LLM ya no lo ve); la memoria es conocimiento estructurado y pequeño que sobrevive a la ventana
+(el nombre del proyecto se fijó en el turno 1 y sigue en el system prompt en el turno 8). Las dos viven en
+una `Session`, y las sesiones en `SessionStore`: **un diccionario en memoria del proceso**, sin base de
+datos ni Redis. Se acepta esa volatilidad porque el objetivo del ejercicio es separar historial de memoria
+y gobernar lo que viaja al LLM; una sesión dura minutos; y la interfaz del store (`create`/`get`/`delete`)
+es la misma que tendría uno respaldado en Redis o Postgres cuando haya varios workers o haga falta retomar
+sesiones (los docstrings del módulo lo detallan).
+
+### Endpoints
 
 ```bash
+# 1) Crear la sesión (201). El session_id (UUID v4) viaja en cada petición posterior.
+curl -s -X POST http://localhost:8000/api/v1/sessions
+# {"session_id":"bae1820a-...","created_at":"2026-10-05T23:07:27Z","max_turns":6}
+
+# 2) Turno 1: multipart/form-data con la transcripción y los parámetros tipados del formulario
+curl -s -X POST http://localhost:8000/api/v1/sessions/$SID/estimate \
+  -F "transcript=<transcripciones/panaderia-descripcion-detallada.txt" \
+  -F "project_name=Tienda online La Espiga" -F "project_type=web" \
+  -F "hourly_rate_eur=50" -F "deadline_weeks=8" -F "detail_level=resumen"
+
+# 3) Turno 2: solo lo nuevo. Sin nombre de proyecto: lo recuerda la memoria
+curl -s -X POST http://localhost:8000/api/v1/sessions/$SID/estimate \
+  -F "transcript=<transcripciones/panaderia-turno-2-cambios.txt" -F "detail_level=resumen"
+
+# 4) Turno 3: con adjuntos (PDF y Word); se repite -F attachments por cada fichero
+curl -s -X POST http://localhost:8000/api/v1/sessions/$SID/estimate \
+  -F "transcript=<transcripciones/panaderia-turno-3-adjunto.txt" \
+  -F "attachments=@transcripciones/adjuntos/panaderia-especificacion-tecnica.pdf;type=application/pdf" \
+  -F "attachments=@transcripciones/adjuntos/panaderia-propuesta-anterior.docx"
+
+# Estado de la sesión: memoria del proyecto e historial efectivo (lo que viajaría al LLM)
+curl -s http://localhost:8000/api/v1/sessions/$SID
+curl -s -X DELETE http://localhost:8000/api/v1/sessions/$SID      # 204
+```
+
+Campos del multipart de `POST /api/v1/sessions/{session_id}/estimate`:
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `transcript` | texto, mínimo 20 caracteres | **obligatorio**. Lo nuevo de este turno (no hace falta repetir lo anterior) |
+| `attachments` | ficheros, 0..`ATTACHMENT_MAX_FILES` | `.pdf`, `.docx`, `.txt`, `.md`. Un `.doc` o una imagen devuelven `415` |
+| `project_name`, `project_type`, `hourly_rate_eur`, `deadline_weeks`, `estimation_mode`, `detail_level`, `prompt_version` | como en `POST /api/v1/estimate` | opcionales; se validan con el mismo `EstimationRequest` (`422` con el mismo formato de error) |
+
+La respuesta es la de `POST /api/v1/estimate` (`estimation`, `model`, `provider`, `usage`, `prompt`,
+`generated_at`) más el estado de la sesión:
+
+```json
+{
+  "estimation": "## Estimación: Tienda online La Espiga\n...",
+  "usage": { "input_tokens": 6291, "output_tokens": 419, "total_tokens": 6710, "cost": { "total_usd": 0.001195, ... } },
+  "prompt": { "template": "estimacion", "version": "v3", "system_prompt_chars": 13044, "user_prompt_chars": 3694, "transcription_chars": 389 },
+  "session_id": "bae1820a-...",
+  "turn": 3,
+  "window": { "max_turns": 6, "turns_in_window": 3, "dropped_turns": 0, "messages_sent": 6 },
+  "project_metadata": {
+    "project_name": "Tienda online La Espiga", "project_type": "web",
+    "assumed_team": "1 desarrollador backend + 1 desarrollador frontend + 1 diseñador UX (part-time)", "assumed_team_size": 3,
+    "mentioned_technologies": ["WhatsApp", "Bizum", "Stripe", "Excel", "AWS", "WordPress", "WooCommerce"],
+    "agreed_scope": "Desarrollo de una tienda online para la panadería ...", "hourly_rate_eur": 50, "deadline_weeks": 8,
+    "last_total_hours": 324, "attached_documents": ["panaderia-especificacion-tecnica.pdf", "panaderia-propuesta-anterior.docx"],
+    "updated_at": "2026-10-05T23:08:12Z"
+  },
+  "attachments": [
+    { "filename": "panaderia-especificacion-tecnica.pdf", "kind": "pdf", "size_bytes": 2371, "chars": 1290, "pages": 2, "truncated": false, "warning": null },
+    { "filename": "panaderia-propuesta-anterior.docx", "kind": "docx", "size_bytes": 37156, "chars": 683, "pages": null, "truncated": false, "warning": null }
+  ]
+}
+```
+
+Códigos: `201` sesión creada · `200` turno completado · `404` la sesión no existe (o el servicio se
+reinició) · `413` adjunto demasiado grande · `415` formato de adjunto no soportado · `422` formulario
+inválido, versión de plantilla inexistente, adjunto ilegible o demasiados adjuntos · `500`/`502` como en
+`/estimate`. Si el LLM falla, el turno se retira del historial: un error no deja un mensaje de usuario sin
+respuesta.
+
+### La ventana deslizante
+
+`ConversationHistory` guarda turnos (`user` + `assistant`). `start_turn(user)` mete el mensaje del turno
+actual y recorta: con `max_turns=6` viajan como mucho 6 mensajes de usuario (los 5 anteriores con su
+respuesta más el actual) además del system prompt. `to_messages_list(system_prompt)` devuelve el array
+listo para la API con el system prompt **regenerado fuera** a partir de la memoria actual: el system prompt
+no se guarda en el historial, así nunca sale de la ventana y siempre lleva la memoria más reciente.
+
+Por qué es la estrategia por defecto razonable al arrancar: es trivial, determinista, barata (ninguna
+llamada extra) y acota el coste por turno. Qué la hace insuficiente, y se ve en la conversación real de
+abajo: la entrada crece un turno tras otro (3.894 → 4.917 → 6.291 tokens en tres turnos) porque cada
+mensaje de usuario repite parámetros y recordatorios y el adjunto se queda dentro del historial; y cuando un
+turno sale de la ventana se pierde íntegro aunque contuviera la única mención a un requisito. La memoria
+amortigua lo segundo (los hechos extraídos sobreviven), pero no lo primero. Eso es lo que resolverán en el
+directo la compresión con anclas y el resumen acumulativo.
+
+### Adjuntos: camino B (extracción local)
+
+De los dos caminos del enunciado se implementa el **B**: `app/services/attachments.py` extrae el texto con
+`pypdf` (PDF) y `python-docx` (Word; párrafos y tablas en el orden del documento), acepta también `.txt` y
+`.md`, y lo concatena a la transcripción con separadores claros antes de renderizar el prompt:
+
+```
+<transcripción del turno>
+
+--- attachment: panaderia-especificacion-tecnica.pdf ---
+<texto extraído>
+--- fin del adjunto: panaderia-especificacion-tecnica.pdf ---
+```
+
+Por qué B y no A (subir el fichero a la Files API del proveedor):
+
+- **Independiente del proveedor.** El proyecto soporta OpenAI y Anthropic con el mismo código; con el
+  camino A habría que mantener dos integraciones de ficheros y el adjunto solo funcionaría con modelos
+  multimodales.
+- **Control y medida.** El texto que ve el modelo es inspeccionable (`attachments[].chars`, truncado o no,
+  páginas), se puede recortar (`ATTACHMENT_MAX_CHARS`) y cuenta en `user_prompt_chars` y en los tokens. Un
+  PDF escaneado sin texto no pasa en silencio: llega con `warning`.
+- **Se prueba sin LLM.** Los tests generan PDF y Word reales y comprueban la extracción y que el texto
+  llega al prompt; con la Files API habría que llamar al proveedor.
+- **Prepara RAG.** Convertir el documento en texto es el primer paso del chunking del módulo 3; con el
+  camino A ese paso no existe.
+
+Lo que se pierde: diagramas y tablas complejas (el PDF se reduce a texto), y hay que mantener la
+extracción. Es la contrapartida aceptada.
+
+### Cómo se actualiza `project_metadata`: heurística, no LLM extractor
+
+Tras cada respuesta, `app/services/metadata_extractor.py` extrae los hechos del turno **sin ninguna
+llamada adicional** y `ProjectMetadata.merged` los fusiona con la memoria anterior (el dato nuevo manda,
+un dato ausente no borra, las listas se acumulan sin duplicados):
+
+| Campo | De dónde sale |
+|---|---|
+| `project_name` | El parámetro del formulario; si no, el título `## Estimación: ...` de la **primera** estimación. Después solo lo cambia el formulario (ver observaciones) |
+| `project_type`, `hourly_rate_eur`, `deadline_weeks` | Los parámetros del turno |
+| `assumed_team`, `assumed_team_size` | La línea `**Equipo recomendado: ...**`; el tamaño suma las cifras ("1 backend + 1 frontend + 1 diseñador" → 3) o cuenta perfiles |
+| `agreed_scope` | La sección `### Resumen del alcance` de la última estimación: es el propio modelo consolidando lo acordado |
+| `last_total_hours` | `**Total estimado: N horas**` (admite "1.250" y "47,5") |
+| `mentioned_technologies` | Un vocabulario cerrado de ~100 tecnologías buscado en transcripción, adjuntos y estimación (límites de palabra; "React Native" no cuenta también como "React") |
+| `attached_documents` | Los nombres de los adjuntos de la sesión |
+
+Por qué heurística: el prompt `v2`/`v3` ya obliga al modelo a un **formato de salida fijo** con títulos y
+líneas conocidas. Ese formato es un contrato que ya se paga en el prompt; parsearlo es barato, determinista
+y se prueba con pytest sin LLM. Un extractor LLM duplicaría llamadas, latencia y coste por turno y añadiría
+otra salida que validar. Su límite es evidente (el vocabulario de tecnologías es cerrado y el alcance es el
+resumen literal del modelo), y por eso `extract_project_metadata` es el único punto a sustituir si más
+adelante compensa el extractor LLM.
+
+### La plantilla `v3`: la memoria va al final del system prompt
+
+`prompts/estimacion/v3` es `v2` más una sección "Conversación con memoria" (cada respuesta es la
+estimación completa y actualizada del proyecto; el dato más reciente manda y los cambios se dejan constar en
+supuestos; cómo leer los adjuntos delimitados) y el bloque `<project_metadata>`, que va **después de los
+ejemplos CAG**, al final. Vacío en el primer turno:
+
+```
+<project_metadata>
+</project_metadata>
+```
+
+y con los hechos conocidos a partir del segundo:
+
+```
+<project_metadata>
+- Nombre del proyecto: Tienda online La Espiga
+- Tipo de proyecto: web
+- Alcance acordado hasta ahora: Desarrollo de una tienda online para la panadería ...
+- Tecnologías mencionadas: WhatsApp, Bizum, Stripe, Excel
+- Equipo asumido: 1 desarrollador backend + 1 desarrollador frontend + 1 diseñador UX (part-time) (3 personas)
+- Última estimación: 288 horas
+- Última tarifa: 50 €/hora
+- Último plazo objetivo: 8 semanas
+</project_metadata>
+```
+
+Que vaya al final no es estética: el prefijo del system prompt (rol, reglas, formato, ejemplos: ~12.000
+caracteres) sigue siendo **idéntico entre turnos y entre sesiones**, así que sigue siendo cacheable en el
+proveedor; solo cambia la cola. Los tests lo comprueban (`test_v3_inyecta_la_memoria_al_final_sin_tocar_el_prefijo`).
+`v1` y `v2` siguen funcionando en una sesión (el historial viaja igual), pero ignoran la memoria: sirve para
+comparar.
+
+### Conversación real de tres turnos (`scripts/estimar-sesion.sh`, gpt-4o-mini, 2026-10-05)
+
+Transcripción detallada de la panadería → cambios de alcance una semana después → especificación técnica
+(PDF, 2 páginas) y propuesta anterior de otra consultora (Word) adjuntas:
+
+| Turno | Mensajes al LLM | Tokens entrada | Tokens salida | Coste (USD) | Total estimado | Memoria tras el turno |
+|---|---:|---:|---:|---:|---:|---|
+| 1. Transcripción detallada, con nombre y parámetros | 2 | 3.894 | 378 | 0.000811 | 288 h | nombre, tipo, alcance, equipo (3), tecnologías WhatsApp, Bizum, Stripe, Excel; 288 h |
+| 2. Cambios: reparto a 3 km, suscripción semanal, Bizum (sin repetir nombre ni transcripción) | 4 | 4.917 | 419 | 0.000989 | 312 h | mismo nombre; alcance actualizado con los pedidos recurrentes; 312 h |
+| 3. "Revisad con estos documentos" + PDF (1.290 caracteres) + Word (683) | 6 | 6.291 | 419 | 0.001195 | 324 h | + AWS, WordPress, WooCommerce; documentos registrados; 324 h |
+
+Qué se ve:
+
+- **Coherencia entre turnos.** Las tres estimaciones se titulan `Tienda online La Espiga` y el turno 2
+  integra los cambios sobre la estimación anterior en vez de empezar de cero (el total sube de 288 a 312 h
+  por la suscripción y el cálculo del radio). El turno 3 incorpora la especificación (AWS, bilingüe,
+  exportación a Excel) y sube a 324 h.
+- **El mensaje de usuario del turno 2 es corto** (2.040 caracteres frente a 3.660 del primero) y aun así el
+  modelo sabe de qué proyecto se habla: lo sabe por el historial (4 mensajes) y por la memoria del system prompt.
+- **La entrada crece** 3.894 → 4.917 → 6.291 tokens: es el historial acumulándose. Con 6 turnos y adjuntos
+  la ventana por sí sola no basta; es el problema que atacará el directo.
+- **El coste total de la conversación** fue de 0.003 USD.
+
+Dos cosas salieron solo probando, y están corregidas en la rama:
+
+1. **El nombre del proyecto derivaba.** En la primera ejecución, el turno 2 sin `project_name` tituló la
+   estimación "Tienda online Forn de la Plaça" y el turno 3 "Tienda online Panadería Artesana La Espiga",
+   aunque la memoria decía "Tienda online La Espiga". Causa: el mensaje de usuario de `v2` decía "no indicado
+   (dedúcelo de la transcripción)" y esa instrucción, más cercana, ganaba a la memoria. Arreglo doble: `v3`
+   pide usar el nombre de `<project_metadata>` antes de deducir uno, y el extractor solo toma el título de
+   la estimación cuando la memoria aún no tiene nombre (después solo lo cambia el formulario). Lección: la
+   memoria inyectada compite con las instrucciones del mensaje de usuario; hay que alinearlas.
+2. **El formato `resumen` recorta.** En esa misma ejecución el turno 3 bajó a 246 h: con "máximo 5 bloques"
+   el modelo dejó fuera testing y despliegue. No es un problema de memoria, sino del formato: para
+   conversaciones largas conviene `completa`, o un `resumen` cuyos bloques transversales sean obligatorios.
+
+### Límites y decisiones
+
+- Las sesiones **se pierden al reiniciar** el servicio y no se comparten entre workers (un diccionario por
+  proceso). `SESSION_MAX_SESSIONS` acota la memoria expulsando la sesión menos reciente. La interfaz detecta
+  el `404` y crea una sesión nueva.
+- Un turno a la vez por sesión (`asyncio.Lock`): dos peticiones concurrentes al mismo `session_id` no
+  intercalan sus mensajes.
+- El endpoint de sesión **no hace streaming**: para actualizar historial y memoria hay que tener la respuesta
+  completa, y la interfaz pasa a hablar con la API por HTTP. Se perdió el `st.write_stream` de la sesión 04 a
+  cambio de que el estado viva en la API, que es donde tiene sentido. Un endpoint de streaming con SSE que
+  cierre el turno al terminar es trabajo para más adelante.
+- Los adjuntos quedan **dentro del historial** (en el mensaje de usuario del turno en que se enviaron) hasta
+  que ese turno sale de la ventana; mientras tanto se pagan en cada llamada. La memoria conserva sus
+  tecnologías y su nombre, no su contenido. Otro argumento para la compresión del directo.
+
+## Interfaz: conversación por turnos (Streamlit)
+
+`streamlit_app.py`, en la raíz del proyecto, es la interfaz del estimador. En la sesión 03 era un chat; en
+la 04 el chat dejó de ser la interfaz principal y se sustituyó por un **formulario** cuyos campos son
+exactamente los de `EstimationRequest`, el mismo modelo que valida el endpoint. En el pre-work de la 05 el
+formulario se mantiene, pero cada envío es un **turno** dentro de una **sesión** de la API:
+
+- Al cargar la página crea la sesión (`POST /api/v1/sessions`) y guarda el `session_id` en
+  `st.session_state`. El botón **"Nueva conversación"** vuelve a llamarlo y resetea el estado.
+- Campo de texto para la transcripción (o lo nuevo del turno), **selector múltiple de ficheros** (PDF,
+  Word, texto) y los parámetros tipados en un desplegable. Un selector carga las transcripciones de ejemplo;
+  las de "Panadería" forman la conversación de tres turnos de arriba, y los adjuntos de ejemplo están en
+  `transcripciones/adjuntos/`.
+- Los turnos se van apilando en la página con su estimación, la transcripción enviada, los adjuntos leídos
+  y las métricas (mensajes al LLM, tokens, coste, tiempo).
+- La **barra lateral** muestra la **memoria del proyecto** (`project_metadata`, con su JSON) y el
+  **historial efectivo** (los mensajes que viajarían al LLM, tamaño de cada uno, turnos en ventana y
+  descartados): es la forma de ver la separación entre memoria e historial.
+- Habla con la API por HTTP (`app/clients/estimator_api.py`, `API_BASE_URL`). Sin API arrancada muestra
+  el error y se detiene; si la API se reinició y perdió la sesión, crea otra.
+
+```bash
+uv run uvicorn app.main:app --reload       # la API, en otra terminal
 uv run streamlit run streamlit_app.py      # abre http://localhost:8501
 ```
+
+Capturas de una conversación real de tres turnos (el tercero con el PDF y el Word adjuntos) en
+`docs/capturas/`: [`sesion-05-memoria-del-proyecto.jpg`](docs/capturas/sesion-05-memoria-del-proyecto.jpg)
+(panel de memoria tras el turno 3: tecnologías de los adjuntos, equipo, última estimación, documentos),
+[`sesion-05-historial-y-metricas.jpg`](docs/capturas/sesion-05-historial-y-metricas.jpg) (ventana de 6 turnos,
+3 en ventana, 6 mensajes al LLM, 6.476 tokens de entrada) y [`sesion-05-turno-1.jpg`](docs/capturas/sesion-05-turno-1.jpg).
 
 Por qué un formulario y no un chat: pedir una estimación no es una conversación, es una operación con
 entradas conocidas. Con un chat el usuario tiene que adivinar qué decirle al modelo (¿la tarifa?, ¿el
@@ -286,10 +599,11 @@ Qué hace:
 - **API key**: se lee de `.env` (igual que la API) o, si no está ahí, de `.streamlit/secrets.toml` con
   `st.secrets`. Sin API key el botón de envío aparece deshabilitado con un aviso.
 
-Tests sin llamadas reales: `tests/test_streaming.py` (el servicio de streaming) y
-`tests/test_streamlit_app.py` (la app completa con `streamlit.testing.v1.AppTest`: abre un formulario y no
-un chat, envía parámetros y comprueba lo que llega al LLM, la validación sin llamada, la carga de ejemplos
-y el estado sin API key).
+Tests sin llamadas reales: `tests/test_streaming.py` (el servicio de streaming, que sigue usándose en modo
+transaccional) y `tests/test_streamlit_app.py` (la app completa con `streamlit.testing.v1.AppTest` contra la
+API real en el mismo proceso, con el cliente HTTP sustituido por el `TestClient` de FastAPI y el LLM por un
+doble: crea la sesión al cargar, encadena tres turnos y comprueba que el historial y la memoria llegan al
+LLM y al panel, "Nueva conversación", la validación sin llamada y el error sin API).
 
 ## Prompts como plantillas versionadas
 
@@ -461,6 +775,20 @@ uv run pytest -q          # tests con el LLM sustituido por dobles (no gasta cr�
 scripts/verificar.sh      # estructura + tests + arranque real + llamada real si hay API key
 ```
 
+Los tests de la sesión 05 están en `tests/test_sessions_api.py` (integración con `httpx.AsyncClient` sobre la
+app ASGI), `tests/test_sessions.py` (ventana, memoria y store), `tests/test_attachments.py` (extracción) y
+`tests/test_metadata_extractor.py`. Los tres que pide el enunciado:
+
+| Test | Qué comprueba |
+|---|---|
+| `test_dos_turnos_en_la_misma_sesion_actualizan_la_memoria` | Dos peticiones enlazadas: la memoria acumula tecnologías y actualiza alcance y horas, el system prompt del turno 2 lleva los hechos del turno 1 (y su prefijo es idéntico), y el historial del turno 1 viaja como turnos anteriores |
+| `test_un_pdf_adjunto_cambia_la_estimacion` | Misma transcripción con y sin un PDF que menciona Stripe: el texto llega al prompt entre separadores, la estimación incorpora la tarea de pagos y `last_total_hours` cambia (84 → 108) |
+| `test_ocho_turnos_respetan_la_ventana_deslizante` | Ocho turnos con `SESSION_MAX_TURNS=3`: en ninguna llamada viajan más de 3 mensajes de usuario ni más de 2 de asistente, el system prompt va siempre y solo una vez, los turnos 1-5 desaparecen y la memoria conserva el nombre fijado en el turno 1 |
+
+El doble del LLM (`tests/fakes.py`) genera la estimación a partir del prompt que recibe (toma el nombre del
+proyecto de los parámetros o del bloque `<project_metadata>`, y añade una tarea de pagos si ve "Stripe"),
+así que los tests son deterministas y comprueban el mecanismo, no la calidad del modelo.
+
 `scripts/verificar.sh` comprueba, en orden:
 
 1. Que existen todos los ficheros de la estructura del ejercicio (incluidas las plantillas `v1` y `v2`),
@@ -469,9 +797,11 @@ scripts/verificar.sh      # estructura + tests + arranque real + llamada real si
 2. Que pasan los tests.
 3. Que el servicio arranca y responden `GET /health` (200), `GET /docs` (200), que `POST /api/v1/estimate`
    está en el OpenAPI y valida el body tipado (422 con transcripción vacía, con un enumerado inválido y con
-   una versión de plantilla inexistente), que `GET /api/v1/prompts` lista `v1` y `v2`, y que el formulario
-   de Streamlit arranca.
-4. Si hay API key configurada, que `POST /api/v1/estimate` con parámetros devuelve una estimación real.
+   una versión de plantilla inexistente), que `GET /api/v1/prompts` lista `v1`, `v2` y `v3`, que
+   `POST /api/v1/sessions` crea una sesión y el endpoint multipart devuelve 404/422/415 cuando toca, y que
+   la interfaz de Streamlit arranca.
+4. Si hay API key configurada, que `POST /api/v1/estimate` con parámetros devuelve una estimación real y
+   que una sesión de dos turnos (el segundo con el PDF de ejemplo) funciona y actualiza la memoria.
 
 El mismo script lo ejecuta el pipeline de GitHub Actions (`.github/workflows/estimador-cag.yml`, en la raíz
 del repositorio) en cada push que toque `estimador-cag/`. Un segundo job construye la imagen Docker, la
@@ -494,6 +824,16 @@ Checklist de la sesión 04 (pre-work):
 - [x] Un formulario con parámetros tipados lo sustituye (`EstimationRequest`, compartido con la API)
 - [x] El prompt está fuera del código, en templates versionados (`prompts/estimacion/v1`, `v2`)
 - [x] El endpoint acepta la nueva estructura (`POST /api/v1/estimate` con parámetros; `GET /api/v1/prompts`)
+
+Checklist del pre-work de la sesión 05:
+
+- [x] `POST /api/v1/sessions` crea una sesión y devuelve un `session_id` (UUID v4)
+- [x] `POST /api/v1/sessions/{session_id}/estimate` acepta multipart/form-data con transcripción y adjuntos opcionales y devuelve la misma respuesta que `/estimate` (más el estado de la sesión)
+- [x] Tras varios turnos el LLM mantiene el proyecto en curso (conversación real de tres turnos, mismo nombre, estimación actualizada)
+- [x] `project_metadata` se actualiza entre turnos y se ve en el panel lateral y en `GET /api/v1/sessions/{id}`
+- [x] El historial respeta la ventana deslizante (`SESSION_MAX_TURNS`, test de 8 turnos)
+- [x] README: camino B de adjuntos y por qué; extracción heurística de `project_metadata` y por qué
+- [x] Tests del paso 7 en verde (`uv run pytest -q`: 113 tests)
 
 ## Decisiones de diseño
 
@@ -525,11 +865,28 @@ Checklist de la sesión 04 (pre-work):
   petición puede pedir una versión concreta para comparar, y la respuesta dice cuál se usó.
 - **System prompt estable, datos en el mensaje de usuario** (`v2`): el contexto CAG es idéntico en todas
   las llamadas, cacheable, y la parte variable es pequeña. `v1` se conserva para ver la diferencia.
-- **Sin historial**: cada envío del formulario es una petición independiente y reproducible. La
-  conversación con memoria de la sesión 03 se retiró junto con el chat.
+- **Dos modos**: `POST /api/v1/estimate` sigue siendo transaccional (una petición, una estimación, sin
+  estado) y `POST /api/v1/sessions/{id}/estimate` es conversacional. Comparten `EstimationRequest`, las
+  plantillas, la llamada al proveedor y el cálculo de coste; solo cambia quién construye el prompt.
+- **Historial y memoria separados** (`ConversationHistory` / `ProjectMetadata`): el historial es texto que
+  se recorta con ventana deslizante; la memoria son hechos tipados que se regeneran en el system prompt. El
+  system prompt no se guarda en el historial para que nunca salga de la ventana.
+- **La memoria va al final del system prompt** (`v3`) para no romper el prefijo cacheable.
+- **Adjuntos por extracción local** (camino B) con `pypdf` y `python-docx`, concatenados a la transcripción
+  con separadores; límites de ficheros, bytes y caracteres por configuración.
+- **`project_metadata` por heurística** sobre el formato fijo de la estimación; sin llamadas extra. El
+  nombre del proyecto se fija una vez y solo lo cambia el formulario.
+- **Sesiones en memoria del proceso** (diccionario con tope y expulsión de la menos reciente), un turno a la
+  vez por sesión y rollback del turno si el LLM falla.
+- **La interfaz habla con la API por HTTP**: el estado vive en la API, que es la única que sabe de sesiones.
+  Se pierde el streaming en el modo conversacional (ver "Límites y decisiones").
 
 ## Próximos pasos (sesión en vivo)
 
+- Sesión 05 (directo): compresión del historial con anclas y resumen acumulativo (la entrada crece turno a
+  turno y los adjuntos se quedan en la ventana), tier dinámico según el contexto en runtime, y el patrón
+  Actor-Critic-Boss. Persistir las sesiones (Redis/Postgres) cuando haya más de un worker. Streaming del
+  turno con SSE. Extractor LLM de `project_metadata` si la heurística se queda corta.
 - Sesión 04: salida estructurada (JSON con las tareas y horas tipadas, no solo Markdown) para que el
   resultado sea tan consistente como la entrada; evaluación de versiones de prompt con las mismas entradas.
 - Cacheo del prefijo estable del system prompt en el proveedor (ahora `v2` lo permite).

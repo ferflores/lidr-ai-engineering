@@ -24,7 +24,7 @@ def _fake_generate(captured: dict):
             cost=estimate_cost(1200, 350, ModelPricing(0.15, 0.60)),
             prompt=PromptInfo(
                 template="estimacion",
-                version=request.prompt_version or "v2",
+                version=request.prompt_version or "v3",
                 system_prompt_chars=6000,
                 user_prompt_chars=500,
                 transcription_chars=len(request.transcription),
@@ -43,7 +43,9 @@ def test_health_responde_200(client):
     assert body["provider"] == "openai"
     assert body["model"] == "gpt-4o-mini"
     assert body["llm_configured"] is False
-    assert body["prompt_template"] == "estimacion/v2"
+    assert body["prompt_template"] == "estimacion/v3"
+    assert body["session_max_turns"] == 6
+    assert body["active_sessions"] == 0
 
 
 def test_swagger_y_openapi_disponibles(client):
@@ -53,6 +55,8 @@ def test_swagger_y_openapi_disponibles(client):
     assert "post" in spec["paths"]["/api/v1/estimate"]
     assert "get" in spec["paths"]["/api/v1/prompts"]
     assert "get" in spec["paths"]["/health"]
+    assert "post" in spec["paths"]["/api/v1/sessions"]
+    assert "post" in spec["paths"]["/api/v1/sessions/{session_id}/estimate"]
 
     # El contrato de entrada está documentado: parámetros tipados, solo la transcripción obligatoria
     schema = spec["components"]["schemas"]["EstimationRequest"]
@@ -112,7 +116,7 @@ def test_estimate_devuelve_la_estimacion(client, monkeypatch):
     }
     assert body["prompt"] == {
         "template": "estimacion",
-        "version": "v2",
+        "version": "v3",
         "system_prompt_chars": 6000,
         "user_prompt_chars": 500,
         "transcription_chars": len(TRANSCRIPCION),
@@ -204,11 +208,13 @@ def test_prompts_lista_las_versiones(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["default_version"] == "v2"
+    assert body["default_version"] == "v3"
     por_version = {t["version"]: t for t in body["templates"]}
-    assert list(por_version)[:2] == ["v1", "v2"]
+    assert list(por_version)[:3] == ["v1", "v2", "v3"]
     assert por_version["v1"]["is_default"] is False
-    assert por_version["v2"]["is_default"] is True
+    assert por_version["v2"]["is_default"] is False
+    assert por_version["v3"]["is_default"] is True
+    assert por_version["v3"]["created"] == "2026-10-05"
     assert por_version["v2"]["id"] == "estimacion/v2"
     assert por_version["v2"]["name"] == "estimacion"
     assert por_version["v2"]["created"] == "2026-09-28"

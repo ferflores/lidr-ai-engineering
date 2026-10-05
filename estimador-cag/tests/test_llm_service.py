@@ -149,7 +149,7 @@ def test_openai_recibe_system_con_ejemplos_y_user_con_parametros_y_transcripcion
     # 100 tokens a 0.15 $/M + 40 tokens a 0.60 $/M
     assert (result.cost.input_usd, result.cost.output_usd, result.cost.total_usd) == (0.000015, 0.000024, 0.000039)
     assert result.prompt.template == "estimacion"
-    assert result.prompt.version == "v2"
+    assert result.prompt.version == "v3"
     assert result.prompt.transcription_chars == len(TRANSCRIPCION)
     assert result.prompt.system_prompt_chars == len(system)
     assert result.prompt.user_prompt_chars == len(user)

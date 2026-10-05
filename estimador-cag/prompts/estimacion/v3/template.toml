@@ -1,0 +1,18 @@
+# Metadatos de la plantilla. Los lee app/services/prompts.py (tomllib, sin dependencias).
+[prompt]
+name = "estimacion"
+version = "v3"
+description = "Conversación multi-turno con memoria: bloque <project_metadata> al final del system prompt, reglas para integrar turnos anteriores y documentos adjuntos"
+created = 2026-10-05
+changelog = [
+  "Añade la sección 'Conversación con memoria': cada respuesta es la estimación completa y actualizada del proyecto en curso, el dato más reciente prevalece y los cambios se dejan constar en supuestos",
+  "Añade el bloque <project_metadata> con los hechos conocidos del proyecto (nombre, alcance, tecnologías, equipo, última estimación, tarifa, plazo, documentos); vacío en el primer turno",
+  "El bloque va AL FINAL del system prompt: el prefijo (rol, reglas, formato, ejemplos CAG) sigue siendo idéntico entre turnos y cacheable; solo varía la cola",
+  "Explica cómo leer los adjuntos delimitados por '--- attachment: <fichero> ---' dentro de la transcripción",
+  "El mensaje de usuario es el de v2 con un cambio: sin nombre de proyecto en los parámetros, pide usar el de <project_metadata> antes de deducir uno nuevo (gpt-4o-mini renombraba el proyecto en cada turno). Los adjuntos viajan concatenados a la transcripción",
+]
+
+# Variables que cada plantilla espera recibir. Si falta alguna, el registro falla antes de llamar al LLM.
+[variables]
+system = ["examples", "project_metadata"]
+user = ["transcription", "project_name", "project_type", "hourly_rate_eur", "deadline_weeks", "estimation_mode", "detail_level"]

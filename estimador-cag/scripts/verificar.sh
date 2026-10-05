@@ -5,8 +5,9 @@
 #      de prompt versionadas) y que el texto del prompt no está en el código.
 #   2. Tests (pytest) con el LLM sustituido por dobles.
 #   3. Arranque real del servicio: /health, /docs, /openapi.json, /api/v1/prompts, validación del
-#      body tipado, y arranque del formulario de Streamlit.
-#   4. (Opcional) Llamada real al LLM con parámetros si hay API key configurada.
+#      body tipado, sesiones (POST /api/v1/sessions, 404, multipart 422/415) y arranque del formulario.
+#   4. (Opcional) Llamada real al LLM si hay API key: una estimación suelta y una conversación de dos
+#      turnos con adjunto (SKIP_SESSION_LLM=1 para omitir solo esta última).
 #
 # Uso: scripts/verificar.sh          (variables: PORT, SKIP_LLM=1)
 set -euo pipefail
@@ -27,7 +28,12 @@ REQUIRED=(
   app/context/__init__.py app/context/examples.py
   app/schemas/__init__.py app/schemas/estimation.py
   app/services/prompts.py
+  app/services/sessions.py app/services/attachments.py app/services/metadata_extractor.py
+  app/services/conversation.py app/routers/sessions.py app/clients/estimator_api.py
   prompts/README.md
+  prompts/estimacion/v3/template.toml prompts/estimacion/v3/system.md.j2 prompts/estimacion/v3/user.md.j2
+  transcripciones/panaderia-turno-2-cambios.txt transcripciones/panaderia-turno-3-adjunto.txt
+  scripts/generar-adjuntos.py scripts/estimar-sesion.sh
   prompts/estimacion/v1/template.toml prompts/estimacion/v1/system.md.j2 prompts/estimacion/v1/user.md.j2
   prompts/estimacion/v2/template.toml prompts/estimacion/v2/system.md.j2 prompts/estimacion/v2/user.md.j2
   .env.example .gitignore pyproject.toml README.md
@@ -78,7 +84,20 @@ TYPED_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/es
 VERSION_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/estimate" -H "Content-Type: application/json" -d '{"transcription": "El cliente quiere una landing page con formulario.", "prompt_version": "v99"}')
 [ "$VERSION_CODE" = "422" ] && ok "POST /api/v1/estimate rechaza una versión de plantilla inexistente (422)" || fail "versión inexistente devolvió $VERSION_CODE"
 PROMPTS=$(curl -sf "$BASE_URL/api/v1/prompts") || { fail "GET /api/v1/prompts no responde"; PROMPTS=""; }
-echo "$PROMPTS" | grep -q '"version":"v1"' && echo "$PROMPTS" | grep -q '"version":"v2"' && ok "GET /api/v1/prompts lista las plantillas v1 y v2" || fail "GET /api/v1/prompts no lista v1 y v2: $PROMPTS"
+echo "$PROMPTS" | grep -q '"version":"v1"' && echo "$PROMPTS" | grep -q '"version":"v2"' && echo "$PROMPTS" | grep -q '"version":"v3"' && ok "GET /api/v1/prompts lista las plantillas v1, v2 y v3" || fail "GET /api/v1/prompts no lista v1, v2 y v3: $PROMPTS"
+
+# Sesiones conversacionales (sesión 05)
+SESSION=$(curl -s -X POST "$BASE_URL/api/v1/sessions") || SESSION=""
+SESSION_ID=$(echo "$SESSION" | sed -n 's/.*"session_id":"\([^"]*\)".*/\1/p')
+[ -n "$SESSION_ID" ] && ok "POST /api/v1/sessions crea una sesión ($SESSION)" || fail "POST /api/v1/sessions no devolvió session_id: $SESSION"
+STATE_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/v1/sessions/$SESSION_ID")
+[ "$STATE_CODE" = "200" ] && ok "GET /api/v1/sessions/{id} -> 200" || fail "GET /api/v1/sessions/{id} -> $STATE_CODE"
+NOT_FOUND_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/sessions/no-existe/estimate" -F "transcript=El cliente quiere una landing page con formulario.")
+[ "$NOT_FOUND_CODE" = "404" ] && ok "POST /api/v1/sessions/{id}/estimate con sesión inexistente -> 404" || fail "sesión inexistente devolvió $NOT_FOUND_CODE"
+MP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/sessions/$SESSION_ID/estimate" -F "transcript=corta")
+[ "$MP_CODE" = "422" ] && ok "POST /api/v1/sessions/{id}/estimate valida el multipart (422 con transcripción corta)" || fail "multipart inválido devolvió $MP_CODE"
+ATT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/sessions/$SESSION_ID/estimate" -F "transcript=El cliente quiere una landing page con formulario." -F "attachments=@pyproject.toml;filename=programa.exe")
+[ "$ATT_CODE" = "415" ] && ok "POST /api/v1/sessions/{id}/estimate rechaza un adjunto no soportado (415)" || fail "adjunto no soportado devolvió $ATT_CODE"
 
 STREAMLIT_PORT=$((PORT + 1))
 uv run streamlit run streamlit_app.py --server.headless true --server.port "$STREAMLIT_PORT" --server.address 127.0.0.1 >/dev/null 2>&1 &
@@ -113,6 +132,28 @@ for linea in respuesta["estimation"].splitlines():
 PY
   else
     fail "el endpoint no devolvió una estimación: $RESPUESTA"
+  fi
+  if [ "${SKIP_SESSION_LLM:-0}" = "1" ]; then
+    echo "  ⏭  conversación omitida (SKIP_SESSION_LLM=1)"
+  else
+    echo "  -- conversación de dos turnos en una sesión (el segundo con la especificación en PDF) --"
+    uv run scripts/generar-adjuntos.py >/dev/null
+    SID=$(curl -sf -X POST "$BASE_URL/api/v1/sessions" | sed -n 's/.*"session_id":"\([^"]*\)".*/\1/p')
+    T1=$(curl -sf -X POST "$BASE_URL/api/v1/sessions/$SID/estimate" -F "transcript=<transcripciones/panaderia-descripcion-detallada.txt" -F "project_name=Tienda online La Espiga" -F "detail_level=resumen") || T1=""
+    T2=$(curl -sf -X POST "$BASE_URL/api/v1/sessions/$SID/estimate" -F "transcript=<transcripciones/panaderia-turno-3-adjunto.txt" -F "attachments=@transcripciones/adjuntos/panaderia-especificacion-tecnica.pdf;type=application/pdf" -F "detail_level=resumen") || T2=""
+    if echo "$T2" | grep -q '"turn":2'; then
+      ok "dos turnos en la misma sesión; el segundo con adjunto"
+      T1="$T1" T2="$T2" uv run python - <<'PY'
+import json, os
+t1, t2 = json.loads(os.environ["T1"]), json.loads(os.environ["T2"])
+print(f"     turno 1: {t1['window']['messages_sent']} mensajes al LLM · memoria: {t1['project_metadata']['project_name']!r}, {t1['project_metadata']['last_total_hours']} h")
+print(f"     turno 2: {t2['window']['messages_sent']} mensajes al LLM · adjuntos: {[(a['filename'], a['chars']) for a in t2['attachments']]}")
+print(f"     memoria tras el turno 2: {t2['project_metadata']['project_name']!r}, {t2['project_metadata']['last_total_hours']} h, tecnologías {t2['project_metadata']['mentioned_technologies']}")
+assert t2["estimation"].startswith("## Estimación"), "el turno 2 no devolvió una estimación"
+PY
+    else
+      fail "la conversación de dos turnos no funcionó: $T1 / $T2"
+    fi
   fi
 else
   echo "  ⏭  omitida (no hay API key configurada; rellena .env para probar el flujo completo)"

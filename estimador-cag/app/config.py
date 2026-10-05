@@ -54,9 +54,29 @@ class Settings(BaseSettings):
     # Versión de la plantilla de prompt (carpeta prompts/estimacion/<versión>). Se fija de forma
     # explícita: cambiar el prompt es cambiar de versión, nunca editar la publicada.
     prompt_version: str = Field(
-        default="v2",
+        default="v3",
         pattern=r"^v\d+$",
         description="Versión de la plantilla de prompt que usan la API y el formulario por defecto.",
+    )
+
+    # --- Sesiones conversacionales (sesión 05) ----------------------------------
+    # Ventana deslizante del historial: cuántos turnos (par user+assistant) se conservan por sesión.
+    session_max_turns: int = Field(
+        default=6,
+        ge=1,
+        le=50,
+        description="Turnos que se conservan en el historial de cada sesión (MAX_TURNS de la ventana deslizante).",
+    )
+    # Tope de sesiones vivas en memoria del proceso; al superarlo se expulsa la menos reciente.
+    session_max_sessions: int = Field(default=500, ge=1)
+
+    # --- Adjuntos (PDF, Word, texto) -------------------------------------------
+    attachment_max_files: int = Field(default=5, ge=1, le=20, description="Adjuntos máximos por petición.")
+    attachment_max_bytes: int = Field(default=10 * 1024 * 1024, gt=0, description="Tamaño máximo de cada adjunto, en bytes.")
+    attachment_max_chars: int = Field(
+        default=20_000,
+        gt=0,
+        description="Caracteres de texto extraído que se conservan por adjunto; el resto se recorta (y se avisa).",
     )
 
     # --- Parámetros del modelo ---------------------------------------------
