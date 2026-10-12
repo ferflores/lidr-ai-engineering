@@ -1,4 +1,4 @@
-# Estimador CAG — Proyecto 1 (Sesiones 02, 03, 04 y pre-work 05)
+# Estimador CAG — Proyecto 1 (Sesiones 02, 03, 04, 05 y pre-work 06)
 
 Servicio **FastAPI** que recibe la transcripción de una reunión con un cliente más unos **parámetros
 tipados** (tarifa, tipo de proyecto, plazo, enfoque, nivel de detalle) y devuelve una **estimación de
@@ -11,6 +11,14 @@ Desde el pre-work de la **sesión 05** el estimador deja de ser solo transaccion
 **adjuntos** PDF, Word y texto cuyo contenido se extrae localmente. La interfaz es un **formulario en
 Streamlit** que ahora habla con la API por HTTP y muestra la memoria y el historial efectivo en un panel.
 Ver [Sesiones conversacionales con memoria y adjuntos](#sesiones-conversacionales-con-memoria-y-adjuntos-pre-work-sesión-05).
+
+Desde el directo de la **sesión 05** y el pre-work de la **sesión 06** el historial se **comprime** (los
+turnos que salen de la ventana se pliegan en un **resumen acumulativo** y los hechos del cliente se
+conservan como **anclas**), cada turno resuelve un **tier**, pasa por una **caché** exacta y semántica y
+deja un único evento **`turn_observed`** con sus 13 campos; sobre eso hay un **framework de evals**
+(`evals/`) y un **stress** del CAG (`evals/stress/`) cuyo resultado es [`evals/stress/REPORT.md`](evals/stress/REPORT.md).
+Ver [Compresión, tier, caché y observación](#compresión-del-historial-tier-caché-y-observación-sesión-05-directo)
+y [Stress del CAG](#stress-del-cag-pre-work-sesión-06).
 
 Arquitectura **CAG**: todo el contexto que necesita el modelo (estimaciones de ejemplo) viaja íntegro
 dentro del prompt en cada llamada. No hay base de datos ni retrieval; el único estado es el de las
@@ -74,7 +82,12 @@ estimador-cag/
 │   ├── services/sessions.py    # ConversationHistory (ventana deslizante), ProjectMetadata (memoria), Session, SessionStore
 │   ├── services/attachments.py # extracción local de texto de PDF / Word / texto (camino B) y concatenación al transcript
 │   ├── services/metadata_extractor.py  # heurística que actualiza project_metadata tras cada turno
-│   ├── services/conversation.py        # orquesta un turno: adjuntos → prompt con memoria → LLM → historial → memoria
+│   ├── services/conversation.py        # orquesta un turno: adjuntos → compresión → prompt → caché/LLM → historial → memoria → turn_observed
+│   ├── services/anchors.py     # anclas heurísticas: hechos del cliente que sobreviven a la ventana (bloque <anchors>)
+│   ├── services/summarizer.py  # resumen acumulativo de los turnos que salen de la ventana (bloque <summary>; LLM o heurístico)
+│   ├── services/tiering.py     # tier dinámico: modelo y tokens de salida según el contexto del turno
+│   ├── services/response_cache.py      # caché de respuestas exacta y semántica (Jaccard), en memoria del proceso
+│   ├── services/observability.py       # el evento structlog `turn_observed` (13 campos + extras)
 │   ├── services/pricing.py     # precios por millón de tokens y cálculo del coste de cada llamada
 │   ├── clients/estimator_api.py        # cliente HTTP de la API que usa la interfaz de Streamlit
 │   └── context/examples.py     # estimaciones de ejemplo (el "conocimiento" del sistema)
@@ -82,8 +95,22 @@ estimador-cag/
 │   └── estimacion/
 │       ├── v1/                 # template.toml + system.md.j2 + user.md.j2 (el prompt original, migrado)
 │       ├── v2/                 # parámetros tipados en el mensaje de usuario, system prompt estable
-│       └── v3/                 # v2 + conversación con memoria: bloque <project_metadata> al final (por defecto)
-├── streamlit_app.py            # conversación por turnos: formulario + adjuntos, panel de memoria e historial, "Nueva conversación"
+│       ├── v3/                 # v2 + conversación con memoria: bloque <project_metadata> al final
+│       └── v4/                 # v3 + compresión: bloques <anchors> y <summary> al final (por defecto)
+│   └── resumen/v1/             # el prompt del summarizer (resumen acumulativo)
+├── evals/
+│   ├── metrics.py              # MetricResult, run_all_metrics y las métricas SchemaAdherence, CostBounds, ContentRecall
+│   ├── golden_dataset.json     # 16 casos golden (transcripción + parámetros + lo que debe cumplir la estimación)
+│   ├── run.py                  # runner de los casos golden (--http o in-process, --fake sin API key)
+│   └── stress/                 # pre-work sesión 06: el stress del CAG
+│       ├── scenarios.py        # tres perfiles multi-turno (growing, pivot, contradiction) con fact-tracker
+│       ├── metrics.py          # LatencyBudgetMetric, CostBudgetMetric, MemoryDriftMetric
+│       ├── fixtures/build_pdfs.py  # PDFs sintéticos calibrados (5/20/50/100 KB) con marcadores
+│       ├── run.py              # runner: escenarios × tamaños × repeticiones → results.csv (+ REPORT.md)
+│       ├── report.py           # REPORT.md a partir del CSV: tabla resumen, tres curvas, lectura
+│       ├── results.csv         # una fila por turno con los 13 campos de turn_observed y las métricas
+│       └── REPORT.md           # el deliverable de la sesión 06
+├── streamlit_app.py            # conversación por turnos: formulario + adjuntos, panel de memoria, compresión e historial
 ├── .streamlit/                 # config.toml (headless) y secrets.toml.example (alternativa a .env)
 ├── tests/                      # pytest: API, sesiones (httpx.AsyncClient), adjuntos, extractor, plantillas, streaming e interfaz
 ├── scripts/
@@ -184,12 +211,19 @@ Cómo está montado:
 | `ANTHROPIC_API_KEY` | API key de Anthropic (si `LLM_PROVIDER=anthropic`) | — |
 | `OPENAI_MODEL` | Modelo de OpenAI | `gpt-4o-mini` |
 | `ANTHROPIC_MODEL` | Modelo de Anthropic | `claude-haiku-4-5` |
-| `PROMPT_VERSION` | Versión de la plantilla de prompt por defecto (`prompts/estimacion/<versión>`) | `v3` |
+| `PROMPT_VERSION` | Versión de la plantilla de prompt por defecto (`prompts/estimacion/<versión>`) | `v4` |
 | `SESSION_MAX_TURNS` | Turnos (par user+assistant) que conserva la ventana deslizante de cada sesión | `6` |
 | `SESSION_MAX_SESSIONS` | Tope de sesiones vivas en memoria del proceso (se expulsa la menos reciente) | `500` |
 | `ATTACHMENT_MAX_FILES` | Adjuntos máximos por petición | `5` |
 | `ATTACHMENT_MAX_BYTES` | Tamaño máximo de cada adjunto | `10485760` (10 MB) |
-| `ATTACHMENT_MAX_CHARS` | Caracteres de texto extraído que se conservan por adjunto (el resto se recorta y se avisa) | `20000` |
+| `ATTACHMENT_MAX_CHARS` | Caracteres de texto extraído que se conservan por adjunto (el resto se recorta y se avisa). 60.000 es el tope de referencia del curso; el pre-work 05 usaba 20.000 | `60000` |
+| `ANCHORS_MAX` / `ANCHORS_PER_TURN` | Anclas que conserva una sesión (0 las desactiva) y tope por turno | `24` / `6` |
+| `SUMMARY_MODE` | Resumen acumulativo de los turnos que salen de la ventana: `llm` (una llamada extra), `heuristic` (sin llamadas) u `off` | `llm` |
+| `SUMMARY_MAX_CHARS` / `SUMMARY_PROMPT_VERSION` | Tope del resumen y versión de `prompts/resumen/` | `1500` / `v1` |
+| `TIER_EXTENDED_MIN_CONTEXT_CHARS` / `TIER_EXTENDED_MIN_ATTACHMENT_CHARS` | Umbrales a partir de los que el turno resuelve el tier `extended` | `40000` / `15000` |
+| `TIER_EXTENDED_MODEL` / `TIER_EXTENDED_MAX_TOKENS` | Modelo y tokens de salida del tier `extended` (por defecto, los mismos que el estándar: el tier solo se observa) | — |
+| `RESPONSE_CACHE_ENABLED` / `SEMANTIC_CACHE_THRESHOLD` | Caché de respuestas y umbral de similitud (Jaccard) del acierto semántico | `true` / `0.9` |
+| `LOG_FORMAT` | Formato de los eventos structlog (`turn_observed`): `json` o `console` | `json` |
 | `API_BASE_URL` | URL de la API para la interfaz de Streamlit | `http://localhost:8000` |
 | `LLM_TEMPERATURE` | Temperatura del modelo (0-2) | `0.2` |
 | `LLM_MAX_TOKENS` | Máximo de tokens de salida | `4096` |
@@ -542,6 +576,105 @@ Dos cosas salieron solo probando, y están corregidas en la rama:
   que ese turno sale de la ventana; mientras tanto se pagan en cada llamada. La memoria conserva sus
   tecnologías y su nombre, no su contenido. Otro argumento para la compresión del directo.
 
+## Compresión del historial, tier, caché y observación (sesión 05 directo)
+
+El pre-work de la 05 dejó dos problemas medidos: la entrada crece turno a turno y, cuando un turno sale de
+la ventana, se pierde entero aunque fuera el único que mencionaba un requisito. Esto es lo que lo resuelve
+(la plantilla `v4` es `v3` más dos bloques al final del system prompt; el prefijo cacheable no cambia):
+
+| Pieza | Módulo | Qué hace | Cómo viaja al LLM |
+|---|---|---|---|
+| **Anclas** | `app/services/anchors.py` | De cada mensaje del usuario extrae hechos cortos con reglas deterministas: nombre (`name`), presupuesto (`budget`), plazo (`deadline`), tecnologías (`stack`), frases de cambio (`change`) y requisitos (`requirement`). Los de un solo valor (nombre, presupuesto, plazo) se sustituyen por el más reciente; el resto se acumula sin duplicados hasta `ANCHORS_MAX` (24), expulsando los acumulables más antiguos | Bloque `<anchors>`: `- [turno k] Presupuesto: 30.000 €` |
+| **Resumen acumulativo** | `app/services/summarizer.py` | Cuando `start_turn` expulsa un turno de la ventana, **antes** de llamar al LLM ese turno se pliega en `Session.summary`. `SUMMARY_MODE=llm` hace una llamada extra con `prompts/resumen/v1` (se mide y se paga: `summarizer_*` en `turn_observed`); `heuristic` guarda el principio de lo que dijo el cliente y las líneas clave de la estimación sin llamar a nadie; `off` es el comportamiento anterior. Si la llamada falla se degrada a heurístico y el turno no se pierde. Tope `SUMMARY_MAX_CHARS` (1.500): cuando no cabe, se pierde lo más antiguo | Bloque `<summary>` |
+| **Tier dinámico** | `app/services/tiering.py` | Reglas en orden sobre el contexto del turno: `attachments_large` (adjuntos ≥ 15.000 caracteres) y `context_large` (system + ventana ≥ 40.000) resuelven `extended`; si no, `standard` (`default`). Cada turno registra `last_resolved_tier` y `last_tier_rule`. Por defecto los dos tiers usan **el mismo modelo**: el tier se observa sin alterar las medidas (`TIER_EXTENDED_MODEL` lo cambia) | Elige `model` y `max_tokens` de la llamada |
+| **Caché de respuestas** | `app/services/response_cache.py` | Exacta (hash del system prompt y todos los mensajes) y semántica (mismo system e historial, y el mensaje actual con Jaccard de palabras ≥ `SEMANTIC_CACHE_THRESHOLD`, 0.9). Sin embeddings, a propósito: determinista y sin dependencias. Un acierto devuelve la estimación guardada con 0 tokens y 0 USD y `cache_hit_kind` ∈ {`exact`, `semantic`} | Evita la llamada |
+| **`turn_observed`** | `app/services/observability.py` | Un único evento structlog por turno con los 13 campos del ejercicio de la sesión 06 (`turn_index`, `session_id`, `enriched_transcript_chars`, `attachments_total_chars`, `messages_in_window`, `anchors_count`, `summary_chars`, `tokens_in`, `tokens_out`, `cost_usd`, `latency_ms`, `cache_hit_kind`, `last_resolved_tier`) más extras (regla del tier, modelo, `summarizer_*`, `context_chars`...). `tokens_in`, `cost_usd` y `latency_ms` incluyen al summarizer. Se emite en JSON a stdout y se guarda en la sesión | — |
+
+Por qué un evento agregado y no cinco logs sueltos: el CSV del stress se extrae de una pasada, la
+correlación entre `messages_in_window` y `cost_usd` es trivial (misma fila) y no hay que reconciliar
+timestamps. Y por qué además se expone por la API: `POST /api/v1/sessions/{id}/estimate` devuelve el evento
+en `turn_observed` (y `cache_hit_kind`, `tier`, `compression`), y `GET /api/v1/sessions/{id}` devuelve
+`message_count`, `anchors_count`, `summary_chars`, `last_resolved_tier`, `last_tier_rule`, el bloque
+`compression` (anclas y resumen) y `last_turn_observed`. Así el runner funciona igual contra Docker, uvicorn o
+in-process, sin parsear stdout. Es el mismo diccionario que va al log (`emit_turn_observed`).
+
+```bash
+# Un turno con todo: el evento en la respuesta...
+curl -s -X POST http://localhost:8000/api/v1/sessions/$SID/estimate -F "transcript=<transcripciones/panaderia-turno-2-cambios.txt" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["cache_hit_kind"], d["tier"]); print(json.dumps(d["turn_observed"], indent=1, ensure_ascii=False))'
+# ...y en el log del servicio (una línea JSON por turno)
+docker compose logs api | grep turn_observed
+```
+
+El orden dentro del turno (`app/services/conversation.py`) importa: validar → `start_turn` (sale el turno
+más antiguo) → summarizer sobre lo que salió → anclas del turno → system prompt con memoria + anclas +
+resumen → tier → caché o LLM → cierre (historial, memoria, anclas, tier) → `turn_observed`. Si el LLM
+falla, el turno y sus anclas se retiran; el resumen de lo que ya salió se conserva porque esos turnos ya no están.
+
+El patrón Actor-Critic-Boss (opcional en la 05) **no está implementado**; `evals/run.py --mode acb` lo dice en
+vez de fingirlo.
+
+### Framework de evals (`evals/`)
+
+`evals/metrics.py` define el patrón: `MetricResult(name, score, passed, details)`, un `Protocol`
+`Metric.evaluate(observation)` y `run_all_metrics`, que nunca lanza (una métrica que explota cuenta como
+fallida con el error en `details`). Tres métricas sobre una estimación suelta (`EvalObservation`):
+
+| Métrica | Qué comprueba | Tipo de fallo que detecta |
+|---|---|---|
+| `SchemaAdherenceMetric` | Las secciones y líneas obligatorias del formato según `detail_level` (y ninguna prohibida), y que el total se parsea | **Duro**: si el formato se rompe, `metadata_extractor` deja de extraer |
+| `CostBoundsMetric(max_usd)` | `cost_usd ≤` tope del caso (o global) | Presupuesto como contrato |
+| `ContentRecallMetric(threshold)` | Fracción de los términos esperados presentes en la estimación | **Silencioso**: la salida es válida y barata, pero vacía |
+
+`evals/golden_dataset.json` trae 16 casos (transcripción + parámetros + términos esperados + tope de coste) y
+`evals/run.py` los ejecuta contra `POST /api/v1/estimate`:
+
+```bash
+uv run python -m evals.run --http http://localhost:8000          # o sin --http: in-process con tu .env
+uv run python -m evals.run --cases landing-hubspot,api-pagos-stripe --output evals/results.json
+uv run python -m evals.run --fake                                 # humo del runner con el LLM simulado (no mide calidad)
+```
+
+## Stress del CAG (pre-work sesión 06)
+
+El deliverable es [`evals/stress/REPORT.md`](evals/stress/REPORT.md) con [`evals/stress/results.csv`](evals/stress/results.csv):
+el baseline cuantitativo del CAG (latencia, coste, memoria) sobre el que el directo compara RAG. Nada se
+optimiza entre medidas: ventana de 6, resumen de 1.500 caracteres, 24 anclas, tope de adjunto de 60.000.
+
+| Bloque | Dónde | Qué |
+|---|---|---|
+| 1. Observación por turno | `app/services/observability.py` | El evento `turn_observed` de arriba |
+| 2. Escenarios multi-turno | `evals/stress/scenarios.py` | Tres perfiles de 20 turnos sobre un mismo proyecto, cada turno con su **fact-tracker** (hechos literales que los turnos posteriores deberían recordar) y, en `pivot` y `contradiction`, los hechos que un turno **retira**: `growing` (Nimbus: un requisito nuevo por turno; ¿sobrevive el nombre al turno 20?), `pivot` (Atlas: React Native → Flutter en el turno 5; ¿`mentioned_technologies` acumula ambos?), `contradiction` (Faro: 30.000 € en el turno 3, 80.000 € en el 8, plazo de 12 a 20 semanas en el 12; ¿cuál se preserva, cuál es ancla, cuál acaba en el resumen?) |
+| 3. Adjuntos grandes | `evals/stress/fixtures/build_pdfs.py` | PDFs sintéticos deterministas calibrados por caracteres extraíbles (5.000 / 20.000 / 50.000 / 100.000; 0 = sin adjunto) con cinco marcadores al 2 %, 25 %, 50 %, 75 % y 98 % del documento (Redsys, Power BI, Azure, SAP, catalán). El de 100 KB supera el tope de 60.000 y mide cómo trunca. No se versionan: el runner los regenera |
+| 4. Métricas | `evals/stress/metrics.py` | `LatencyBudgetMetric(budget_ms)`, `CostBudgetMetric(budget_usd)` y `MemoryDriftMetric(fact, where=["summary","anchors","metadata"])`: match exacto case-insensitive sobre el snapshot de `GET /sessions/{id}`. Viven aquí y no en `evals/metrics.py` porque evalúan el shape de `turn_observed` y del snapshot de sesión, no una estimación suelta; comparten `MetricResult` y `run_all_metrics`. Tests en `tests/test_stress_metrics.py` (pasa, falla, límite por métrica) |
+| 5. Runner + reporte | `evals/stress/run.py`, `evals/stress/report.py` | Escenarios × tamaños × repeticiones → una sesión por combinación, el adjunto en el turno 1 → una fila por turno en el CSV (los 13 campos + extras + una columna por métrica + recall del adjunto) → `REPORT.md` (tabla resumen, tres curvas en tabla, lectura) |
+
+```bash
+uv run python -m evals.stress.run --http http://localhost:8000 \
+    --scenarios growing,pivot,contradiction \
+    --attachment-sizes 0,5,20,50,100 \
+    --repeats 3 \
+    --output evals/stress/results.csv            # y REPORT.md al terminar (--report, --no-report)
+uv run python -m evals.stress.report              # regenera REPORT.md desde el CSV
+uv run python -m evals.stress.run --fake --turns 8 --repeats 2   # humo sin API key (el reporte avisa de que no es un baseline)
+```
+
+Flags útiles: `--turns N` acota los turnos por escenario, `--latency-budget-ms` (4.000) y
+`--cost-budget-usd` (0.01) son los presupuestos que `LatencyBudgetMetric` y `CostBudgetMetric` convierten en
+test. Sin `--http` corre in-process con el `.env` del proyecto. La tirada completa son 3 × 5 × 3 × 20 = 900
+turnos, de los que las repeticiones 2 y 3 aciertan en la caché exacta (son el test de **ráfagas**: mismo
+prompt, coste 0); con `gpt-4o-mini` la tirada cuesta del orden de 1-2 USD y tarda 30-60 minutos. El CSV se
+vuelca tras cada conversación: un fallo a mitad no pierde lo medido.
+
+Qué mide cada curva del reporte:
+
+- **Latencia vs tokens de entrada** (solo turnos sin caché): la pendiente del proveedor, con el summarizer dentro.
+- **Coste acumulado vs turno** (sin adjunto, primera repetición): dónde se dobla la pendiente (turno 7: entra el summarizer).
+- **MemoryDriftMetric vs N** (N ∈ {1, 3, 6, 10, 20}): la degradación silenciosa. No mira el historial: mide lo que
+  sobrevive a la ventana. Un hecho reformulado por el summarizer cuenta como perdido, y eso se discute en el
+  reporte, no se maquilla en la métrica (determinismo > sofisticación).
+- **Adjuntos** (turno 1): tokens, latencia, coste, tier y recall de los marcadores del PDF en la estimación.
+
 ## Interfaz: conversación por turnos (Streamlit)
 
 `streamlit_app.py`, en la raíz del proyecto, es la interfaz del estimador. En la sesión 03 era un chat; en
@@ -833,7 +966,7 @@ Checklist del pre-work de la sesión 05:
 - [x] `project_metadata` se actualiza entre turnos y se ve en el panel lateral y en `GET /api/v1/sessions/{id}`
 - [x] El historial respeta la ventana deslizante (`SESSION_MAX_TURNS`, test de 8 turnos)
 - [x] README: camino B de adjuntos y por qué; extracción heurística de `project_metadata` y por qué
-- [x] Tests del paso 7 en verde (`uv run pytest -q`: 113 tests)
+- [x] Tests del paso 7 en verde (`uv run pytest -q`)
 
 ## Decisiones de diseño
 
@@ -881,12 +1014,19 @@ Checklist del pre-work de la sesión 05:
 - **La interfaz habla con la API por HTTP**: el estado vive en la API, que es la única que sabe de sesiones.
   Se pierde el streaming en el modo conversacional (ver "Límites y decisiones").
 
+Checklist del pre-work de la sesión 06:
+
+- [x] Cada `POST /api/v1/sessions/{id}/estimate` emite un evento `turn_observed` con los 13 campos (structlog, JSON) y lo devuelve en la respuesta y en `GET /api/v1/sessions/{id}`
+- [x] `uv run python -m evals.stress.run --http http://localhost:8000` corre de punta a punta y deja `evals/stress/results.csv` con ≥ 50 filas (900 en la tirada completa)
+- [x] `evals/stress/metrics.py` expone `LatencyBudgetMetric`, `CostBudgetMetric` y `MemoryDriftMetric` con tests en verde (`tests/test_stress_metrics.py`)
+- [x] `evals/stress/REPORT.md` con la tabla resumen, las tres curvas en tabla y los dos párrafos de lectura con afirmaciones cuantitativas (generado por `evals/stress/report.py`)
+- [x] Todo en el repo: código, escenarios, métricas, runner, reporte y CSV
+
 ## Próximos pasos (sesión en vivo)
 
-- Sesión 05 (directo): compresión del historial con anclas y resumen acumulativo (la entrada crece turno a
-  turno y los adjuntos se quedan en la ventana), tier dinámico según el contexto en runtime, y el patrón
-  Actor-Critic-Boss. Persistir las sesiones (Redis/Postgres) cuando haya más de un worker. Streaming del
-  turno con SSE. Extractor LLM de `project_metadata` si la heurística se queda corta.
+- Sesión 06 (directo): RAG sobre el baseline de `evals/stress/REPORT.md`. Pendiente del directo de la 05: el
+  patrón Actor-Critic-Boss (`evals/run.py --mode acb`), persistir las sesiones (Redis/Postgres) cuando haya más
+  de un worker, streaming del turno con SSE y extractor LLM de `project_metadata` si la heurística se queda corta.
 - Sesión 04: salida estructurada (JSON con las tareas y horas tipadas, no solo Markdown) para que el
   resultado sea tan consistente como la entrada; evaluación de versiones de prompt con las mismas entradas.
 - Cacheo del prefijo estable del system prompt en el proveedor (ahora `v2` lo permite).

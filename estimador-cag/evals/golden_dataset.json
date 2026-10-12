@@ -1,0 +1,102 @@
+{
+  "description": "16 casos golden del estimador: una transcripción corta con parámetros tipados y lo que la estimación debe cumplir (formato, coste máximo y términos que no pueden faltar). Los evalúa evals/run.py con SchemaAdherenceMetric, CostBoundsMetric y ContentRecallMetric.",
+  "default_max_cost_usd": 0.01,
+  "cases": [
+    {
+      "id": "landing-hubspot",
+      "transcript": "El cliente necesita una landing page con formulario de contacto integrado con HubSpot y una sección de blog con editor WYSIWYG. El diseño ya existe en Figma.",
+      "params": {"project_name": "Landing HubSpot", "project_type": "web", "hourly_rate_eur": 60, "deadline_weeks": 4, "detail_level": "completa"},
+      "expected": {"terms": ["Landing HubSpot", "HubSpot", "blog", "Plazo objetivo"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "panaderia-tienda",
+      "transcript": "Una panadería artesanal quiere vender por internet con recogida en tienda por franjas horarias y reparto en un radio de 3 km. Pagos con tarjeta y Bizum. El catálogo lo tienen en Excel.",
+      "params": {"project_name": "Tienda online La Espiga", "project_type": "web", "hourly_rate_eur": 50, "detail_level": "resumen"},
+      "expected": {"terms": ["Tienda online La Espiga", "Bizum", "recogida"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "app-reservas-restaurante",
+      "transcript": "Restaurante con tres locales que quiere una app móvil para reservar mesa, con confirmación por SMS, lista de espera y un panel para el personal de sala. iOS y Android.",
+      "params": {"project_name": "Reservas Casa Lola", "project_type": "movil", "hourly_rate_eur": 55, "estimation_mode": "equilibrada", "detail_level": "completa"},
+      "expected": {"terms": ["Reservas Casa Lola", "SMS", "iOS", "Android", "Contingencia (10 %)"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "api-pagos-stripe",
+      "transcript": "Necesitan una API REST para gestionar suscripciones con Stripe: alta, cambio de plan, cancelación y webhooks de pago fallido. Debe quedar documentada con OpenAPI y versionada.",
+      "params": {"project_name": "API Suscripciones", "project_type": "api", "hourly_rate_eur": 70, "detail_level": "completa"},
+      "expected": {"terms": ["API Suscripciones", "Stripe", "webhook", "OpenAPI"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "pipeline-datos-ventas",
+      "transcript": "Cadena de tiendas que quiere consolidar las ventas de 40 puntos de venta en un almacén de datos en BigQuery, con cargas diarias y un cuadro de mando en Power BI para dirección.",
+      "params": {"project_name": "Cuadro de mando ventas", "project_type": "datos", "hourly_rate_eur": 65, "deadline_weeks": 10, "detail_level": "completa"},
+      "expected": {"terms": ["Cuadro de mando ventas", "BigQuery", "Power BI", "Plazo objetivo"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "intranet-rrhh",
+      "transcript": "Empresa de 200 empleados que necesita una intranet para solicitar vacaciones, consultar nóminas y publicar comunicados. Login con las cuentas de Microsoft que ya tienen.",
+      "params": {"project_name": "Intranet RRHH", "project_type": "web", "hourly_rate_eur": 50, "detail_level": "resumen"},
+      "expected": {"terms": ["Intranet RRHH", "vacaciones", "nóminas"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "marketplace-artesanos",
+      "transcript": "Marketplace donde artesanos locales suben sus productos, los clientes compran y la plataforma se queda una comisión. Pagos con Stripe Connect, valoraciones y mensajería entre comprador y vendedor.",
+      "params": {"project_name": "Marketplace Artesanos", "project_type": "web", "hourly_rate_eur": 60, "estimation_mode": "conservadora", "detail_level": "completa"},
+      "expected": {"terms": ["Marketplace Artesanos", "Stripe", "comisión", "Contingencia (20 %)"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "chatbot-soporte",
+      "transcript": "Quieren un asistente de soporte en su web que responda preguntas sobre pedidos y devoluciones usando la documentación interna, con escalado a un agente humano por WhatsApp cuando no sepa responder.",
+      "params": {"project_name": "Asistente de soporte", "project_type": "otro", "hourly_rate_eur": 80, "detail_level": "completa"},
+      "expected": {"terms": ["Asistente de soporte", "WhatsApp", "devoluciones"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "migracion-wordpress",
+      "transcript": "Tienen una web corporativa en WordPress con 300 páginas y quieren migrarla a Next.js manteniendo las URLs y el posicionamiento, con el contenido gestionado desde un CMS headless.",
+      "params": {"project_name": "Migración web corporativa", "project_type": "web", "hourly_rate_eur": 55, "deadline_weeks": 8, "detail_level": "resumen"},
+      "expected": {"terms": ["Migración web corporativa", "WordPress", "Next.js", "URL"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "app-fidelizacion",
+      "transcript": "Cadena de cafeterías que quiere una app de fidelización con tarjeta de puntos, cupones y notificaciones push. Los puntos se suman escaneando un QR del ticket.",
+      "params": {"project_name": "Fidelización Café Sol", "project_type": "movil", "hourly_rate_eur": 50, "estimation_mode": "optimista", "detail_level": "completa"},
+      "expected": {"terms": ["Fidelización Café Sol", "QR", "push", "Contingencia (0 %)"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "erp-integracion-sap",
+      "transcript": "Fabricante que necesita sincronizar pedidos y stock entre su tienda online en Shopify y SAP cada 15 minutos, con alertas por correo cuando una sincronización falle.",
+      "params": {"project_name": "Integración Shopify-SAP", "project_type": "api", "hourly_rate_eur": 75, "detail_level": "completa"},
+      "expected": {"terms": ["Integración Shopify-SAP", "Shopify", "SAP", "stock"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "portal-citas-clinica",
+      "transcript": "Clínica dental con cuatro consultas que quiere un portal para que los pacientes pidan cita online, reciban recordatorios por SMS y puedan ver su historial de visitas. Hay que cumplir el RGPD.",
+      "params": {"project_name": "Portal de citas", "project_type": "web", "hourly_rate_eur": 60, "deadline_weeks": 6, "detail_level": "completa"},
+      "expected": {"terms": ["Portal de citas", "SMS", "RGPD", "Plazo objetivo"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "dashboard-iot",
+      "transcript": "Empresa de climatización con 500 sensores que envían temperatura y consumo cada minuto. Quieren almacenar las series, ver gráficas en tiempo real y recibir alertas por umbral.",
+      "params": {"project_name": "Monitorización IoT", "project_type": "datos", "hourly_rate_eur": 70, "detail_level": "resumen"},
+      "expected": {"terms": ["Monitorización IoT", "alertas", "tiempo real"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "app-gimnasio",
+      "transcript": "Gimnasio que quiere una app para reservar clases, con control de aforo, pago de la cuota mensual y acceso al local con código QR en el torno. Android e iOS.",
+      "params": {"project_name": "App Gimnasio Norte", "project_type": "movil", "hourly_rate_eur": 50, "detail_level": "completa"},
+      "expected": {"terms": ["App Gimnasio Norte", "aforo", "QR", "cuota"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "facturacion-autonomos",
+      "transcript": "Herramienta web para que autónomos emitan facturas, lleven gastos y generen el modelo trimestral de IVA. Exportación a Excel y envío de la factura por correo en PDF.",
+      "params": {"project_name": "Facturación autónomos", "project_type": "web", "hourly_rate_eur": 55, "estimation_mode": "equilibrada", "detail_level": "completa"},
+      "expected": {"terms": ["Facturación autónomos", "IVA", "Excel", "PDF"], "max_cost_usd": 0.01}
+    },
+    {
+      "id": "sin-nombre-deducido",
+      "transcript": "Una academia de idiomas quiere ofrecer clases online en directo con pizarra compartida, grabación de las sesiones y pago por bonos de horas. Profesores y alumnos tendrán su propio panel.",
+      "params": {"project_type": "web", "hourly_rate_eur": 50, "detail_level": "completa"},
+      "expected": {"terms": ["## Estimación:", "grabación", "bonos"], "max_cost_usd": 0.01}
+    }
+  ]
+}

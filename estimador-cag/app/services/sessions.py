@@ -54,6 +54,7 @@ class Turn:
     user: str
     assistant: str | None = None
     created_at: datetime = field(default_factory=_now)
+    index: int | None = None  # número del turno en la sesión (lo fija quien orquesta el turno)
 
     @property
     def is_complete(self) -> bool:
@@ -79,6 +80,7 @@ class ConversationHistory:
         self.max_turns = max_turns
         self.turns: list[Turn] = []
         self.dropped_turns = 0  # cuántos turnos han salido ya por la ventana (para mostrarlo y medirlo)
+        self.last_dropped: list[Turn] = []  # los que salieron en el último start_turn (para el resumen acumulativo)
 
     def __len__(self) -> int:
         return len(self.turns)
@@ -88,12 +90,16 @@ class ConversationHistory:
         return [turn for turn in self.turns if turn.is_complete]
 
     def start_turn(self, user_content: str) -> Turn:
-        """Añade el mensaje del usuario del turno actual y recorta la ventana para que quepa."""
+        """Añade el mensaje del usuario del turno actual y recorta la ventana para que quepa.
+
+        Los turnos que salen de la ventana quedan en `last_dropped` para que quien orquesta el turno
+        pueda plegarlos en el resumen acumulativo antes de llamar al LLM.
+        """
         if self.turns and not self.turns[-1].is_complete:
             raise RuntimeError("Ya hay un turno en curso: complétalo o descártalo antes de empezar otro")
         turn = Turn(user=user_content)
         self.turns.append(turn)
-        self._trim()
+        self.last_dropped = self._trim()
         return turn
 
     def complete_turn(self, assistant_content: str) -> Turn:
@@ -110,11 +116,18 @@ class ConversationHistory:
             return True
         return False
 
-    def _trim(self) -> None:
-        """Ventana deslizante: descarta los turnos más antiguos hasta quedarse con `max_turns`."""
+    def _trim(self) -> list[Turn]:
+        """Ventana deslizante: descarta los turnos más antiguos hasta quedarse con `max_turns`. Devuelve los descartados."""
+        dropped: list[Turn] = []
         while len(self.turns) > self.max_turns:
-            self.turns.pop(0)
+            dropped.append(self.turns.pop(0))
             self.dropped_turns += 1
+        return dropped
+
+    @property
+    def message_count(self) -> int:
+        """Mensajes user/assistant que hay ahora en la ventana (lo que viajaría al LLM sin el system prompt)."""
+        return len(self.messages())
 
     def messages(self) -> list[dict[str, str]]:
         """Los mensajes user/assistant de la ventana, sin system prompt, en el formato común a los proveedores."""
@@ -203,9 +216,28 @@ class SessionNotFound(KeyError):
     """No existe ninguna sesión con ese identificador (o el servicio se reinició y se perdió)."""
 
 
+@dataclass(frozen=True)
+class Anchor:
+    """Un hecho corto extraído de un mensaje del usuario que debe sobrevivir a la ventana deslizante.
+
+    `kind` clasifica el hecho (name, budget, deadline, stack, requirement, change) y decide cómo se
+    fusiona: los de un solo valor (name, budget, deadline) se sustituyen por el más reciente; los demás
+    se acumulan. `turn` es el turno que lo aportó, para medir qué sobrevive y desde cuándo.
+    """
+
+    kind: str
+    text: str
+    turn: int
+
+    @property
+    def key(self) -> str:
+        return f"{self.kind}:{' '.join(self.text.casefold().split())}"
+
+
 @dataclass
 class Session:
-    """Una conversación de estimación: su historial (ventana) y su memoria (hechos del proyecto)."""
+    """Una conversación de estimación: su historial (ventana), su memoria (hechos del proyecto),
+    sus anclas, su resumen acumulativo y lo observado en el último turno."""
 
     session_id: str
     history: ConversationHistory
@@ -213,6 +245,11 @@ class Session:
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
     turn_count: int = 0  # turnos completados en toda la sesión, hayan salido o no de la ventana
+    anchors: list[Anchor] = field(default_factory=list)   # hechos que sobreviven a la ventana (app/services/anchors.py)
+    summary: str = ""                                      # resumen acumulativo de los turnos que salieron de la ventana
+    last_resolved_tier: str | None = None                  # tier del último turno (app/services/tiering.py)
+    last_tier_rule: str | None = None                      # regla que lo decidió
+    last_turn_observed: dict | None = None                 # el evento turn_observed del último turno, tal cual se emitió
     # Un turno a la vez por sesión: dos peticiones concurrentes con el mismo session_id se serializan para
     # que el historial no intercale mensajes de usuario sin su respuesta.
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)

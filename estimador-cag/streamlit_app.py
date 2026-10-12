@@ -153,6 +153,26 @@ def render_project_metadata(metadata: dict) -> None:
         st.json(metadata)
 
 
+def render_compression(compression: dict | None, observed: dict | None) -> None:
+    """Anclas y resumen acumulativo de la sesión, y lo observado en el último turno (caché, tier, summarizer)."""
+    if not compression or (not compression.get("anchors") and not compression.get("summary")):
+        st.caption("Nada todavía: las anclas aparecen con el primer turno y el resumen cuando un turno sale de la ventana.")
+    else:
+        with st.expander(f"Anclas ({compression.get('anchors_count', 0)})", expanded=False):
+            for anchor in compression.get("anchors") or []:
+                st.markdown(f"- `{anchor['kind']}` · turno {anchor['turn']} · {anchor['text']}")
+        with st.expander(f"Resumen acumulativo ({miles(compression.get('summary_chars', 0))} caracteres)", expanded=False):
+            st.write(compression.get("summary") or "(vacío)")
+    if observed:
+        st.caption(
+            f"Último turno: caché `{observed.get('cache_hit_kind')}` · tier `{observed.get('last_resolved_tier')}` "
+            f"({observed.get('last_tier_rule')}) · summarizer `{observed.get('summarizer_mode')}`"
+            + (f" ({observed.get('summarizer_tokens_in')} tokens, {observed.get('summarizer_latency_ms')} ms)" if observed.get("summarizer_called") else "")
+        )
+        with st.expander("Evento `turn_observed`"):
+            st.json(observed)
+
+
 def render_turn(index: int, turn: dict) -> None:
     with st.container(border=True):
         st.markdown(f"**Turno {index}**")
@@ -380,6 +400,11 @@ with st.sidebar:
     st.subheader("Memoria del proyecto")
     st.caption("`project_metadata`: hechos extraídos de cada turno; van en el bloque `<project_metadata>` del system prompt.")
     render_project_metadata(state["project_metadata"] if state else {})
+
+    st.divider()
+    st.subheader("Compresión del historial")
+    st.caption("Lo que sobrevive a la ventana: anclas (`<anchors>`) y resumen acumulativo (`<summary>`), plantilla `v4`.")
+    render_compression(state.get("compression") if state else None, state.get("last_turn_observed") if state else None)
 
     st.divider()
     st.subheader("Historial efectivo")

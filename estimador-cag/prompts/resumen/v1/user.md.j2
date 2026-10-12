@@ -1,0 +1,18 @@
+## Resumen actual
+{% if current_summary %}
+{{ current_summary }}
+{% else %}
+(vacío: es la primera vez que un turno sale de la ventana)
+{% endif %}
+
+## Turnos que salen de la ventana
+{% for item in dropped %}
+### Turno {{ item.turn }}
+Cliente:
+{{ item.user }}
+
+Estimación resultante (extracto):
+{{ item.assistant }}
+
+{% endfor %}
+Devuelve el resumen actualizado (máximo {{ max_chars }} caracteres), integrando el resumen actual con estos turnos.

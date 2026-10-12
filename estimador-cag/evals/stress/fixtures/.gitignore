@@ -1,0 +1,2 @@
+# Los PDFs sintéticos se regeneran con `uv run python -m evals.stress.fixtures.build_pdfs` (son deterministas)
+*.pdf

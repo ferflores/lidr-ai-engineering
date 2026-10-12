@@ -1,0 +1,13 @@
+# Plantilla del resumen acumulativo (summarizer). La usa app/services/summarizer.py cuando un turno sale de la ventana.
+[prompt]
+name = "resumen"
+version = "v1"
+description = "Pliega los turnos que salen de la ventana deslizante en un resumen acumulativo corto que conserva nombres, cifras, decisiones y cambios"
+created = 2026-10-12
+changelog = [
+  "Primera versión: resumen en castellano, acotado en caracteres, que prioriza hechos literales (nombres, presupuestos, plazos, tecnologías, requisitos) y cambios de criterio sobre la prosa",
+]
+
+[variables]
+system = ["max_chars"]
+user = ["current_summary", "dropped", "max_chars"]

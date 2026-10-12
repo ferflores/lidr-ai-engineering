@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import anthropic
@@ -46,7 +46,7 @@ from app.context.examples import render_examples
 from app.schemas.estimation import EstimationRequest
 from app.services.pricing import CostEstimate, estimate_cost, find_pricing
 from app.services.prompts import PromptTemplate, get_template
-from app.services.sessions import ProjectMetadata
+from app.services.sessions import Anchor, ProjectMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -124,19 +124,24 @@ def build_prompt(
     settings: Settings | None = None,
     examples: list[dict[str, str]] | None = None,
     project_metadata: ProjectMetadata | None = None,
+    anchors: Sequence[Anchor] = (),
+    summary: str = "",
 ) -> RenderedPrompt:
     """Renderiza la plantilla (la versión pedida en `request.prompt_version` o la configurada).
 
     Las plantillas reciben siempre el mismo conjunto de variables: los parámetros tipados de la
-    petición, el bloque de ejemplos CAG y la memoria del proyecto (`project_metadata`, None si no hay
-    sesión o la sesión acaba de empezar). Cada versión usa las que necesita: `v3` renderiza el bloque
-    `<project_metadata>`; `v1` y `v2` lo ignoran.
+    petición, el bloque de ejemplos CAG, la memoria del proyecto (`project_metadata`, None si no hay
+    sesión o la sesión acaba de empezar), las anclas y el resumen acumulativo. Cada versión usa las que
+    necesita: `v3` renderiza el bloque `<project_metadata>`; `v4` añade `<anchors>` y `<summary>`;
+    `v1` y `v2` ignoran todo eso.
     """
     template = get_template(settings, request.prompt_version)
     variables = {
         **request.prompt_variables(),
         "examples": render_examples(examples),
         "project_metadata": project_metadata.prompt_variables() if project_metadata else None,
+        "anchors": [{"kind": a.kind, "text": a.text, "turn": a.turn} for a in anchors] or None,
+        "summary": summary.strip() or None,
     }
     return RenderedPrompt(
         template=template,
@@ -170,6 +175,14 @@ def require_api_key(settings: Settings) -> str:
     return api_key
 
 
+def cost_for(usage: TokenUsage | None, settings: Settings, model: str | None = None) -> CostEstimate | None:
+    """Coste de una llamada según la tabla de precios (o los precios sobrescritos por configuración)."""
+    if usage is None:
+        return None
+    pricing = find_pricing(model or settings.model, settings.llm_input_price_per_mtok, settings.llm_output_price_per_mtok)
+    return estimate_cost(usage.input_tokens, usage.output_tokens, pricing) if pricing is not None else None
+
+
 def build_result(
     text: str,
     usage: TokenUsage | None,
@@ -177,12 +190,11 @@ def build_result(
     prompt: RenderedPrompt,
     request: EstimationRequest,
     elapsed_seconds: float | None = None,
+    model: str | None = None,
 ) -> EstimationResult:
     cost = None
     if usage is not None:
-        pricing = find_pricing(settings.model, settings.llm_input_price_per_mtok, settings.llm_output_price_per_mtok)
-        if pricing is not None:
-            cost = estimate_cost(usage.input_tokens, usage.output_tokens, pricing)
+        cost = cost_for(usage, settings, model)
         logger.info(
             "Tokens: %d entrada + %d salida = %d; coste: %s; tiempo: %s; plantilla: %s",
             usage.input_tokens, usage.output_tokens, usage.total_tokens,
@@ -192,7 +204,7 @@ def build_result(
         )
     return EstimationResult(
         estimation=text,
-        model=settings.model,
+        model=model or settings.model,
         provider=settings.llm_provider,
         usage=usage,
         cost=cost,
@@ -260,21 +272,33 @@ async def generate_estimation(request: EstimationRequest, settings: Settings | N
     return build_result(text, usage, settings, prompt, request, time.perf_counter() - started)
 
 
-async def call_llm(prompt: RenderedPrompt, settings: Settings, api_key: str) -> tuple[str, TokenUsage | None]:
-    """Envía el prompt (system + historial + mensaje actual) al proveedor configurado y devuelve texto y tokens."""
+async def call_llm(
+    prompt: RenderedPrompt,
+    settings: Settings,
+    api_key: str,
+    model: str | None = None,
+    max_tokens: int | None = None,
+) -> tuple[str, TokenUsage | None]:
+    """Envía el prompt (system + historial + mensaje actual) al proveedor configurado y devuelve texto y tokens.
+
+    `model` y `max_tokens` permiten que el tier dinámico (app/services/tiering.py) elija otro modelo o
+    otro presupuesto de salida para un turno concreto; por defecto, los de la configuración.
+    """
     if settings.llm_provider == "openai":
-        return await _call_openai(prompt, settings, api_key)
-    return await _call_anthropic(prompt, settings, api_key)
+        return await _call_openai(prompt, settings, api_key, model or settings.openai_model, max_tokens or settings.llm_max_tokens)
+    return await _call_anthropic(prompt, settings, api_key, model or settings.anthropic_model, max_tokens or settings.llm_max_tokens)
 
 
-async def _call_openai(prompt: RenderedPrompt, settings: Settings, api_key: str) -> tuple[str, TokenUsage | None]:
+async def _call_openai(
+    prompt: RenderedPrompt, settings: Settings, api_key: str, model: str, max_tokens: int
+) -> tuple[str, TokenUsage | None]:
     async with openai.AsyncOpenAI(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             response = await client.chat.completions.create(
-                model=settings.openai_model,
+                model=model,
                 messages=[{"role": "system", "content": prompt.system}, *prompt.messages],
                 temperature=settings.llm_temperature,
-                max_completion_tokens=settings.llm_max_tokens,
+                max_completion_tokens=max_tokens,
             )
         except openai.APIError as exc:
             raise _translate_openai_error(exc) from exc
@@ -292,12 +316,14 @@ async def _call_openai(prompt: RenderedPrompt, settings: Settings, api_key: str)
     return text, usage
 
 
-async def _call_anthropic(prompt: RenderedPrompt, settings: Settings, api_key: str) -> tuple[str, TokenUsage | None]:
+async def _call_anthropic(
+    prompt: RenderedPrompt, settings: Settings, api_key: str, model: str, max_tokens: int
+) -> tuple[str, TokenUsage | None]:
     async with anthropic.AsyncAnthropic(api_key=api_key, timeout=settings.llm_timeout_seconds) as client:
         try:
             response = await client.messages.create(
-                model=settings.anthropic_model,
-                max_tokens=settings.llm_max_tokens,
+                model=model,
+                max_tokens=max_tokens,
                 system=prompt.system,
                 messages=prompt.messages,
                 extra_body=_anthropic_extra_body(settings),

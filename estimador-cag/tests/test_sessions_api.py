@@ -355,7 +355,7 @@ async def test_sin_api_key_devuelve_500_y_no_toca_la_sesion(async_client):
 async def test_un_fallo_del_proveedor_no_deja_un_turno_huerfano(async_client, llm, monkeypatch):
     session_id = await _nueva_sesion(async_client)
 
-    async def falla(prompt, settings, api_key):
+    async def falla(prompt, settings, api_key, **kwargs):
         raise LLMProviderError("OpenAI ha devuelto un error de cuota")
 
     monkeypatch.setattr(conversation, "call_llm", falla)

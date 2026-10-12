@@ -36,6 +36,13 @@ REQUIRED=(
   scripts/generar-adjuntos.py scripts/estimar-sesion.sh
   prompts/estimacion/v1/template.toml prompts/estimacion/v1/system.md.j2 prompts/estimacion/v1/user.md.j2
   prompts/estimacion/v2/template.toml prompts/estimacion/v2/system.md.j2 prompts/estimacion/v2/user.md.j2
+  app/services/anchors.py app/services/summarizer.py app/services/tiering.py app/services/response_cache.py app/services/observability.py
+  prompts/estimacion/v4/template.toml prompts/estimacion/v4/system.md.j2 prompts/estimacion/v4/user.md.j2
+  prompts/resumen/v1/template.toml prompts/resumen/v1/system.md.j2 prompts/resumen/v1/user.md.j2
+  evals/__init__.py evals/metrics.py evals/run.py evals/golden_dataset.json
+  evals/stress/scenarios.py evals/stress/metrics.py evals/stress/run.py evals/stress/report.py evals/stress/fixtures/build_pdfs.py
+  evals/stress/REPORT.md evals/stress/results.csv
+  tests/test_stress_metrics.py
   .env.example .gitignore pyproject.toml README.md
   streamlit_app.py
 )
@@ -84,7 +91,7 @@ TYPED_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/es
 VERSION_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/estimate" -H "Content-Type: application/json" -d '{"transcription": "El cliente quiere una landing page con formulario.", "prompt_version": "v99"}')
 [ "$VERSION_CODE" = "422" ] && ok "POST /api/v1/estimate rechaza una versión de plantilla inexistente (422)" || fail "versión inexistente devolvió $VERSION_CODE"
 PROMPTS=$(curl -sf "$BASE_URL/api/v1/prompts") || { fail "GET /api/v1/prompts no responde"; PROMPTS=""; }
-echo "$PROMPTS" | grep -q '"version":"v1"' && echo "$PROMPTS" | grep -q '"version":"v2"' && echo "$PROMPTS" | grep -q '"version":"v3"' && ok "GET /api/v1/prompts lista las plantillas v1, v2 y v3" || fail "GET /api/v1/prompts no lista v1, v2 y v3: $PROMPTS"
+echo "$PROMPTS" | grep -q '"version":"v1"' && echo "$PROMPTS" | grep -q '"version":"v2"' && echo "$PROMPTS" | grep -q '"version":"v3"' && echo "$PROMPTS" | grep -q '"version":"v4"' && ok "GET /api/v1/prompts lista las plantillas v1, v2, v3 y v4" || fail "GET /api/v1/prompts no lista v1-v4: $PROMPTS"
 
 # Sesiones conversacionales (sesión 05)
 SESSION=$(curl -s -X POST "$BASE_URL/api/v1/sessions") || SESSION=""
@@ -98,6 +105,19 @@ MP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/sessi
 [ "$MP_CODE" = "422" ] && ok "POST /api/v1/sessions/{id}/estimate valida el multipart (422 con transcripción corta)" || fail "multipart inválido devolvió $MP_CODE"
 ATT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/sessions/$SESSION_ID/estimate" -F "transcript=El cliente quiere una landing page con formulario." -F "attachments=@pyproject.toml;filename=programa.exe")
 [ "$ATT_CODE" = "415" ] && ok "POST /api/v1/sessions/{id}/estimate rechaza un adjunto no soportado (415)" || fail "adjunto no soportado devolvió $ATT_CODE"
+STATE=$(curl -s "$BASE_URL/api/v1/sessions/$SESSION_ID")
+echo "$STATE" | grep -q '"last_turn_observed"' && echo "$STATE" | grep -q '"anchors_count"' && ok "GET /api/v1/sessions/{id} expone anchors_count, summary_chars y last_turn_observed" || fail "GET /api/v1/sessions/{id} sin los campos de observación: $STATE"
+
+# Evals y stress (sesión 06) con el LLM simulado: el runner funciona de punta a punta sin API key
+# (evals/run.py devuelve 1 si algún caso falla una métrica, y con el doble el recall falla siempre: aquí solo se comprueba que corre)
+EVALS_OUT=$(uv run python -m evals.run --fake --cases landing-hubspot 2>/dev/null || true)
+echo "$EVALS_OUT" | grep -q "casos pasan todas las métricas" && ok "evals/run.py corre de punta a punta con el LLM simulado" || fail "evals/run.py no corre con el LLM simulado: $EVALS_OUT"
+STRESS_OUT=$(mktemp -d)
+if uv run python -m evals.stress.run --fake --scenarios growing --attachment-sizes 0,5 --repeats 1 --turns 3 --output "$STRESS_OUT/results.csv" --report "$STRESS_OUT/REPORT.md" >/dev/null 2>&1 && [ "$(wc -l < "$STRESS_OUT/results.csv")" -eq 7 ] && grep -q "## 6. Lectura" "$STRESS_OUT/REPORT.md"; then
+  ok "evals/stress/run.py produce el CSV (una fila por turno) y REPORT.md con el LLM simulado"
+else
+  fail "evals/stress/run.py no produce el CSV y el reporte esperados"
+fi
 
 STREAMLIT_PORT=$((PORT + 1))
 uv run streamlit run streamlit_app.py --server.headless true --server.port "$STREAMLIT_PORT" --server.address 127.0.0.1 >/dev/null 2>&1 &

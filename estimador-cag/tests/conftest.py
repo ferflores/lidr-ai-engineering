@@ -20,6 +20,10 @@ def make_settings(**overrides) -> Settings:
         llm_temperature=0.2,
         llm_max_tokens=1234,
         prompt_version="v3",
+        # La caché global del proceso y el summarizer por LLM se activan solo en los tests que los prueban:
+        # así el resto sigue viendo exactamente una llamada al LLM por turno.
+        response_cache_enabled=False,
+        summary_mode="heuristic",
     )
     values.update(overrides)
     return Settings(**values)

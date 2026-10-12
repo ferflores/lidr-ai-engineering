@@ -16,6 +16,7 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "python-multipart>=0.0.32",
     "streamlit>=1.64.0",
+    "structlog>=26.1.0",
     "uvicorn[standard]>=0.53.0",
 ]
 

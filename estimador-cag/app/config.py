@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # Versión de la plantilla de prompt (carpeta prompts/estimacion/<versión>). Se fija de forma
     # explícita: cambiar el prompt es cambiar de versión, nunca editar la publicada.
     prompt_version: str = Field(
-        default="v3",
+        default="v4",
         pattern=r"^v\d+$",
         description="Versión de la plantilla de prompt que usan la API y el formulario por defecto.",
     )
@@ -70,11 +70,42 @@ class Settings(BaseSettings):
     # Tope de sesiones vivas en memoria del proceso; al superarlo se expulsa la menos reciente.
     session_max_sessions: int = Field(default=500, ge=1)
 
+    # --- Compresión del historial (sesión 05, directo): anclas y resumen acumulativo -----------
+    # Anclas heurísticas: hechos cortos (nombre, presupuesto, plazo, stack, requisitos, cambios) que se
+    # extraen de cada mensaje del usuario y viajan en el system prompt aunque el turno salga de la ventana.
+    anchors_max: int = Field(default=24, ge=0, description="Anclas que se conservan por sesión (0 desactiva las anclas).")
+    anchors_per_turn: int = Field(default=6, ge=1, description="Anclas máximas que puede aportar un solo turno.")
+    # Resumen acumulativo: cuando un turno sale de la ventana se pliega en un resumen que viaja en el
+    # system prompt. `llm` lo hace con una llamada extra (plantilla prompts/resumen/v1, se paga y se mide),
+    # `heuristic` recorta el turno sin llamar a nadie, `off` lo descarta sin más (comportamiento de la sesión 05 pre-work).
+    summary_mode: Literal["llm", "heuristic", "off"] = Field(default="llm")
+    summary_max_chars: int = Field(default=1500, ge=200, description="Longitud máxima del resumen acumulado.")
+    summary_prompt_version: str = Field(default="v1", pattern=r"^v\d+$")
+
+    # --- Tier dinámico: qué modelo y cuántos tokens de salida según el contexto del turno -------------
+    # Las reglas están en app/services/tiering.py; aquí solo los umbrales y a qué modelo va cada tier.
+    # Por defecto los dos tiers usan el mismo modelo (el del proveedor): el tier se resuelve y se registra
+    # (last_resolved_tier / last_tier_rule) sin cambiar de modelo, que es lo que mantiene comparables las medidas.
+    tier_extended_min_context_chars: int = Field(default=40_000, gt=0, description="Caracteres de contexto (system + mensajes) a partir de los que el turno se considera 'extended'.")
+    tier_extended_min_attachment_chars: int = Field(default=15_000, gt=0, description="Caracteres de adjuntos a partir de los que el turno se considera 'extended'.")
+    tier_extended_model: str | None = Field(default=None, description="Modelo del tier 'extended' (por defecto, el mismo que el estándar).")
+    tier_extended_max_tokens: int | None = Field(default=None, gt=0, description="Tokens de salida del tier 'extended' (por defecto, LLM_MAX_TOKENS).")
+
+    # --- Caché de respuestas (exacta y semántica) ------------------------------------------------
+    response_cache_enabled: bool = Field(default=True)
+    response_cache_max_entries: int = Field(default=256, ge=1)
+    response_cache_ttl_seconds: float = Field(default=3600.0, gt=0)
+    semantic_cache_threshold: float = Field(default=0.9, ge=0.0, le=1.0, description="Similitud (Jaccard sobre palabras) mínima para un acierto semántico; 1.0 lo desactiva en la práctica.")
+
+    # --- Observabilidad ------------------------------------------------------------------------
+    log_format: Literal["json", "console"] = Field(default="json", description="Formato de los eventos structlog (turn_observed...).")
+
     # --- Adjuntos (PDF, Word, texto) -------------------------------------------
     attachment_max_files: int = Field(default=5, ge=1, le=20, description="Adjuntos máximos por petición.")
     attachment_max_bytes: int = Field(default=10 * 1024 * 1024, gt=0, description="Tamaño máximo de cada adjunto, en bytes.")
+    # 60.000 es el tope de referencia del curso (MAX_ATTACHMENT_CHARS); el pre-work de la 05 usaba 20.000.
     attachment_max_chars: int = Field(
-        default=20_000,
+        default=60_000,
         gt=0,
         description="Caracteres de texto extraído que se conservan por adjunto; el resto se recorta (y se avisa).",
     )

@@ -49,14 +49,46 @@ class HistoryMessageResponse(BaseModel):
     content: str
 
 
+class AnchorResponse(BaseModel):
+    kind: str = Field(description="name | budget | deadline | change | stack | requirement")
+    text: str
+    turn: int = Field(description="Turno que aportó el ancla.")
+
+
+class CompressionResponse(BaseModel):
+    """Lo que el sistema conserva de los turnos que ya no viajan completos: anclas y resumen acumulativo."""
+
+    anchors: list[AnchorResponse]
+    anchors_count: int
+    summary: str
+    summary_chars: int
+
+
 class SessionStateResponse(BaseModel):
     session_id: str
     created_at: datetime
     updated_at: datetime
     turn_count: int = Field(description="Turnos completados en la sesión, hayan salido o no de la ventana.")
+    message_count: int = Field(description="Mensajes user/assistant que hay ahora en la ventana (len(history)).")
+    anchors_count: int
+    summary_chars: int
+    last_resolved_tier: str | None = Field(default=None, description="Tier resuelto en el último turno (standard | extended).")
+    last_tier_rule: str | None = Field(default=None, description="Regla del tier que se cumplió en el último turno.")
     window: MemoryWindowResponse
     project_metadata: ProjectMetadata = Field(description="Memoria del proyecto: los hechos que se inyectan en el system prompt.")
+    compression: CompressionResponse = Field(description="Anclas y resumen acumulativo (bloques <anchors> y <summary> de la plantilla v4).")
     history: list[HistoryMessageResponse] = Field(description="Historial efectivo (lo que viajaría al LLM, sin el system prompt).")
+    last_turn_observed: dict | None = Field(
+        default=None,
+        description="El evento `turn_observed` del último turno, tal cual se emitió al log (13 campos del ejercicio de la sesión 06 más extras).",
+    )
+
+
+class TierResponse(BaseModel):
+    tier: str
+    rule: str
+    model: str
+    max_tokens: int
 
 
 class AttachmentResponse(BaseModel):
@@ -77,6 +109,10 @@ class SessionEstimationResponse(EstimationResponse):
     window: MemoryWindowResponse
     project_metadata: ProjectMetadata
     attachments: list[AttachmentResponse]
+    compression: CompressionResponse
+    cache_hit_kind: str = Field(description="none | exact | semantic. Con acierto, `usage` viene a 0: nada viajó al proveedor.")
+    tier: TierResponse
+    turn_observed: dict = Field(description="El evento `turn_observed` de este turno (el mismo que se emite al log).")
 
 
 # --- Utilidades ---------------------------------------------------------------------
@@ -89,22 +125,38 @@ def _get_session(session_id: str, store: SessionStore) -> Session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
+def _compression(session: Session) -> CompressionResponse:
+    return CompressionResponse(
+        anchors=[AnchorResponse(kind=a.kind, text=a.text, turn=a.turn) for a in session.anchors],
+        anchors_count=len(session.anchors),
+        summary=session.summary,
+        summary_chars=len(session.summary),
+    )
+
+
 def _state(session: Session) -> SessionStateResponse:
     return SessionStateResponse(
         session_id=session.session_id,
         created_at=session.created_at,
         updated_at=session.updated_at,
         turn_count=session.turn_count,
+        message_count=session.history.message_count,
+        anchors_count=len(session.anchors),
+        summary_chars=len(session.summary),
+        last_resolved_tier=session.last_resolved_tier,
+        last_tier_rule=session.last_tier_rule,
         window=MemoryWindowResponse(
             max_turns=session.history.max_turns,
             turns_in_window=len(session.history),
             dropped_turns=session.history.dropped_turns,
         ),
         project_metadata=session.metadata,
+        compression=_compression(session),
         history=[
             HistoryMessageResponse(role=m["role"], chars=len(m["content"]), content=m["content"])
             for m in session.history.messages()
         ],
+        last_turn_observed=session.last_turn_observed,
     )
 
 
@@ -174,8 +226,13 @@ async def create_session(
 @router.get(
     "/{session_id}",
     response_model=SessionStateResponse,
-    summary="Estado de una sesión: memoria del proyecto e historial efectivo",
-    description="Para depurar y para el panel del cliente: qué sabe el sistema del proyecto y qué turnos siguen en la ventana.",
+    summary="Estado de una sesión: memoria, anclas, resumen, historial efectivo y última observación",
+    description=(
+        "Para depurar, para el panel del cliente y para el runner del stress: qué sabe el sistema del proyecto "
+        "(`project_metadata`), qué conserva de los turnos que salieron de la ventana (`compression.anchors`, "
+        "`compression.summary`), qué turnos siguen en la ventana (`history`), el tier del último turno y el evento "
+        "`turn_observed` completo del último turno (`last_turn_observed`)."
+    ),
     responses={404: {"description": "La sesión no existe (o el servicio se reinició)."}},
 )
 async def get_session_state(session_id: str, store: SessionStore = Depends(get_session_store)) -> SessionStateResponse:
@@ -310,4 +367,8 @@ async def estimate_in_session(
             )
             for a in turn.attachments
         ],
+        compression=_compression(session),
+        cache_hit_kind=turn.cache_hit_kind,
+        tier=TierResponse(tier=turn.tier.tier, rule=turn.tier.rule, model=turn.tier.model, max_tokens=turn.tier.max_tokens),
+        turn_observed=turn.observation or {},
     )

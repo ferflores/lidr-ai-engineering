@@ -12,9 +12,11 @@ from pydantic import BaseModel
 
 from app.config import Settings, get_settings
 from app.routers import estimations, sessions
+from app.services.observability import configure_logging
 from app.services.sessions import get_session_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+configure_logging(get_settings())  # structlog: un evento `turn_observed` por turno (JSON en stdout)
 
 DESCRIPTION = """
 Servicio que recibe la **transcripción de una reunión** con un cliente más unos
@@ -35,6 +37,11 @@ Flujo: `parámetros + transcripción → plantilla vN (system + user) → LLM �
 con **adjuntos** (PDF, Word, texto) cuyo texto se extrae localmente, un **historial con ventana deslizante**
 (`SESSION_MAX_TURNS`) y una **memoria del proyecto** (`project_metadata`) que se inyecta en el system prompt.
 Las sesiones viven en memoria del proceso.
+
+**Compresión y observación** (sesión 05 directo / pre-work 06): los turnos que salen de la ventana se pliegan en un
+**resumen acumulativo**, los hechos del cliente se conservan como **anclas**, cada turno resuelve un **tier** y pasa
+por una **caché** (exacta y semántica), y todo se agrega en un único evento `turn_observed` que
+`GET /api/v1/sessions/{session_id}` expone como `last_turn_observed`.
 """
 
 settings = get_settings()

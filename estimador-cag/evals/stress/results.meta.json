@@ -1,0 +1,26 @@
+{
+  "started_at": "2026-10-12T17:19:17.097232+00:00",
+  "finished_at": "2026-10-12T17:19:33.823550+00:00",
+  "service": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "prompt_template": "estimacion/v4",
+    "session_max_turns": 6,
+    "llm_configured": true
+  },
+  "fake_llm": true,
+  "args": {
+    "http": null,
+    "scenarios": "growing,pivot,contradiction",
+    "attachment_sizes": "0,5,20,50,100",
+    "repeats": 3,
+    "turns": null,
+    "latency_budget_ms": 4000,
+    "cost_budget_usd": 0.01,
+    "output": "C:\\Users\\fernando.flores\\Documents\\work\\lidr\\lidr-ai-engineering\\estimador-cag\\evals\\stress\\results.csv",
+    "report": "C:\\Users\\fernando.flores\\Documents\\work\\lidr\\lidr-ai-engineering\\estimador-cag\\evals\\stress\\REPORT.md",
+    "no_report": false,
+    "fake": true
+  },
+  "rows": 900
+}
