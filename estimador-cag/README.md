@@ -663,8 +663,11 @@ Flags útiles: `--turns N` acota los turnos por escenario, `--latency-budget-ms`
 `--cost-budget-usd` (0.01) son los presupuestos que `LatencyBudgetMetric` y `CostBudgetMetric` convierten en
 test. Sin `--http` corre in-process con el `.env` del proyecto. La tirada completa son 3 × 5 × 3 × 20 = 900
 turnos, de los que las repeticiones 2 y 3 aciertan en la caché exacta (son el test de **ráfagas**: mismo
-prompt, coste 0); con `gpt-4o-mini` la tirada cuesta del orden de 1-2 USD y tarda 30-60 minutos. El CSV se
-vuelca tras cada conversación: un fallo a mitad no pierde lo medido.
+prompt, coste 0); la tirada real del 2026-10-12 con `gpt-4o-mini` hizo 718 llamadas reales, costó 1,53 USD y
+tardó 106 minutos. El CSV se vuelca tras cada conversación: un fallo a mitad no pierde lo medido. **Arranca el
+servicio justo antes de la tirada**: la caché de respuestas vive en memoria del proceso y, si el servicio ya
+respondió a esos prompts (por ejemplo en una pasada de humo), la repetición 1 acierta en caché desde el primer
+turno y deja de medir al LLM.
 
 Qué mide cada curva del reporte:
 
@@ -674,6 +677,38 @@ Qué mide cada curva del reporte:
   sobrevive a la ventana. Un hecho reformulado por el summarizer cuenta como perdido, y eso se discute en el
   reporte, no se maquilla en la métrica (determinismo > sofisticación).
 - **Adjuntos** (turno 1): tokens, latencia, coste, tier y recall de los marcadores del PDF en la estimación.
+
+### Lo que enseñó la tirada real (gpt-4o-mini, 900 turnos, 1,53 USD)
+
+Las cifras completas están en [`evals/stress/REPORT.md`](evals/stress/REPORT.md); esto es lo que cambia la
+forma de ver el CAG:
+
+- **El coste es la dimensión que más se degrada**: el turno 20 cuesta 3,3 veces el turno 1 (0,0024 frente a
+  0,00075 USD) con 3,3 veces más tokens de entrada, aunque ningún turno supera el presupuesto de 0,01 USD. La
+  pendiente se dobla en el turno 7, cuando entra el summarizer. Ventana y resumen ponen un techo: la entrada se
+  estabiliza en 10.000-12.000 tokens en vez de crecer sin límite.
+- **La latencia no la manda la entrada, sino las llamadas encadenadas y la salida**: el turno 1 con un adjunto
+  de 50-100 KB (15.000-17.500 tokens de entrada, una sola llamada) responde en unos 4 s; los turnos 7-20
+  (8.000-12.000 tokens) tardan 8-12 s porque suman la llamada del summarizer (1,5-3,5 s) y generan el doble
+  de salida (900-1.500 tokens frente a 400-500: la estimación crece con el proyecto). El 94 % de los turnos
+  sin caché supera el presupuesto de 4 s; solo los turnos 1-3 lo cumplen.
+- **La caché exacta solo sirve mientras no entra el summarizer**: en las ráfagas (repeticiones 2 y 3) acierta
+  el 100 % de los turnos 1-6 y el 0 % de los turnos 7-20, porque el resumen que escribe el LLM cambia entre
+  pasadas y el system prompt deja de ser idéntico. La semántica no acertó nunca (exige el mismo system). Si se
+  quiere caché con summarizer, hay que excluir el bloque `<summary>` de la clave o usar el modo heurístico.
+- **La memoria literal no se degrada en 20 turnos**: recall del fact-tracker del 100 % en los tres escenarios
+  al turno 20 y el nombre del proyecto en el título el 100 % de las veces. Anclas, resumen y `project_metadata`
+  se solapan (la mayoría de los hechos vive en dos o tres sitios). Lo que falla es **retirar**: el 100 % de las
+  conversaciones de `pivot` llega al turno 20 con React Native aún presente y las de `contradiction` con los
+  30.000 € y las 12 semanas antiguas. Las anclas de un solo valor sí se sustituyen; el resumen (por diseño) y
+  `mentioned_technologies` (por construcción) solo acumulan.
+- **Adjuntos**: no cuestan latencia (el turno 1 responde en ~4 s con 0 o con 100 KB) pero sí recall. El de
+  100 KB se trunca a 60.000 caracteres y solo el 40 % de los marcadores llega a la estimación; con los que caben
+  enteros (5, 20 y 50 KB) el modelo ya deja fuera marcadores (recall medio 87 %). El tier `extended` se activa
+  por adjunto desde 20 KB y por contexto desde el turno 14 en `growing`.
+- **Los dos párrafos de lectura del reporte se generan a partir del CSV** (`evals/stress/report.py`): las
+  afirmaciones cuantitativas (ratios, porcentajes, turno de ruptura) se recalculan al regenerar, así que no
+  pueden quedarse desactualizadas respecto a los datos.
 
 ## Interfaz: conversación por turnos (Streamlit)
 

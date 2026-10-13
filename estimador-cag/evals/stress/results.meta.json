@@ -1,6 +1,6 @@
 {
-  "started_at": "2026-10-12T17:19:17.097232+00:00",
-  "finished_at": "2026-10-12T17:19:33.823550+00:00",
+  "started_at": "2026-10-12T23:52:30.976456+00:00",
+  "finished_at": "2026-10-13T01:38:17.855030+00:00",
   "service": {
     "provider": "openai",
     "model": "gpt-4o-mini",
@@ -8,19 +8,19 @@
     "session_max_turns": 6,
     "llm_configured": true
   },
-  "fake_llm": true,
+  "fake_llm": false,
   "args": {
-    "http": null,
+    "http": "http://127.0.0.1:8000",
     "scenarios": "growing,pivot,contradiction",
     "attachment_sizes": "0,5,20,50,100",
     "repeats": 3,
     "turns": null,
     "latency_budget_ms": 4000,
     "cost_budget_usd": 0.01,
-    "output": "C:\\Users\\fernando.flores\\Documents\\work\\lidr\\lidr-ai-engineering\\estimador-cag\\evals\\stress\\results.csv",
-    "report": "C:\\Users\\fernando.flores\\Documents\\work\\lidr\\lidr-ai-engineering\\estimador-cag\\evals\\stress\\REPORT.md",
+    "output": "evals/stress/results.csv",
+    "report": "/Users/ferfloresv/Documents/work/lidr/lidr-ai-engineering/estimador-cag/evals/stress/REPORT.md",
     "no_report": false,
-    "fake": true
+    "fake": false
   },
   "rows": 900
 }

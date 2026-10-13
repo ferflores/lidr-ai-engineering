@@ -25,6 +25,7 @@ from evals.stress.scenarios import CHECKPOINTS, SCENARIOS
 DEFAULT_INPUT = Path(__file__).resolve().parent / "results.csv"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "REPORT.md"
 RECALL_FLOOR = 0.6  # umbral del enunciado: "el recall cae bajo el 60 %"
+ATTACHMENT_MAX_CHARS = 60_000  # tope de referencia del curso; el reporte lo usa para saber qué adjuntos caben enteros
 
 
 # --- Lectura y utilidades -------------------------------------------------------------------------
@@ -218,7 +219,9 @@ def _summarizer_description(rows: list[dict]) -> str:
 
 
 def _signed_pct(value: float) -> str:
-    return f"{'+' if value >= 0 else '−'}{abs(value) * 100:.0f} %"
+    if round(value * 100) == 0:
+        return "0 %"
+    return f"{'+' if value > 0 else '−'}{abs(value) * 100:.0f} %"
 
 
 def _stale_sentence(rows: list[dict]) -> str:
@@ -231,6 +234,73 @@ def _stale_sentence(rows: list[dict]) -> str:
     return (
         f" En `pivot`, el {pct(share)} de las conversaciones llega al turno {last_n} con el stack retirado (React Native) todavía presente: "
         f"`project_metadata` acumula tecnologías pero no sabe retirar ninguna."
+    )
+
+
+def _burst_sentence(rows: list[dict], window: int) -> str:
+    """Qué hace la caché en las ráfagas (repeticiones 2+): dentro de la ventana y una vez que entra el summarizer."""
+    bursts = [r for r in rows if r["repeat"] > 1]
+    if not bursts:
+        return ""
+
+    def hit_rate(group: list[dict]) -> float | None:
+        return sum(r["cache_hit_kind"] in ("exact", "semantic") for r in group) / len(group) if group else None
+
+    inside = [r for r in bursts if r["turn_index"] <= window]
+    beyond = [r for r in bursts if r["turn_index"] > window]
+    semantic = sum(r["cache_hit_kind"] == "semantic" for r in bursts)
+    llm_summary = any(r["summarizer_mode"] == "llm" for r in rows)
+    sentence = (
+        f" En las ráfagas (repeticiones 2 y 3: los mismos prompts otra vez) la caché exacta absorbe el {pct(hit_rate(inside))} "
+        f"de los turnos 1-{window} con 0 tokens, 0 USD y latencia de milisegundos"
+    )
+    if beyond:
+        sentence += f", pero solo el {pct(hit_rate(beyond))} de los turnos {window + 1}-{max(r['turn_index'] for r in beyond)}"
+        if llm_summary:
+            sentence += (
+                ": en cuanto el summarizer pliega el primer turno, el resumen que escribe el LLM cambia de una pasada a otra "
+                "(temperatura 0,2) y el system prompt deja de ser idéntico, así que ni la caché exacta ni la semántica "
+                "(que exige el mismo system y el mismo historial) lo atrapan"
+            )
+    sentence += f"; la caché semántica acertó {semantic} veces." if semantic else "; la semántica no llegó a acertar ninguna vez."
+    return sentence
+
+
+def _memory_sentence(scenarios: list[str], breaks: dict, recall_last: dict, last_n: int) -> str:
+    detail = "; ".join(
+        f"en `{s}` el recall del fact-tracker {'cae bajo el 60 % a partir del turno ' + str(breaks[s]) if breaks[s] else 'no baja del 60 % en ' + str(last_n) + ' turnos'} y termina en {pct(recall_last[s])}"
+        for s in scenarios
+    )
+    if all(not breaks[s] and (recall_last[s] or 0) >= 0.9 for s in scenarios):
+        detail = "ningún escenario cae bajo el 60 % y el recall del fact-tracker en el turno " + str(last_n) + " es " + ", ".join(
+            f"{pct(recall_last[s])} en `{s}`" for s in scenarios
+        )
+        return (
+            f" Lo que no se rompe en {last_n} turnos es la memoria literal: {detail}. Anclas, resumen y `project_metadata` se solapan "
+            "(la mayoría de los hechos vive en dos o tres sitios a la vez), así que perder uno de los tres no deja hueco; "
+            "lo que sí falla es retirar lo que ya no vale (ver más abajo)."
+        )
+    return f" La memoria se degrada en silencio: {detail}."
+
+
+def _latency_driver_sentence(real: list[dict]) -> str:
+    """Qué manda en la latencia: compara turnos grandes sin summarizer (adjuntos) con turnos encadenados (summarizer)."""
+    with_summary = [r for r in real if r["summarizer_called"]]
+    big_single = [r for r in real if not r["summarizer_called"] and (r["tokens_in"] or 0) >= 14_000]
+    if not with_summary or not big_single:
+        return ""
+    p50_single = percentile([r["latency_ms"] for r in big_single], 50)
+    p50_summary = percentile([r["latency_ms"] for r in with_summary], 50)
+    tokens_single = mean(r["tokens_in"] for r in big_single)
+    tokens_summary = mean(r["tokens_in"] for r in with_summary)
+    out_single = mean(r["tokens_out"] for r in big_single)
+    out_summary = mean(r["tokens_out"] for r in with_summary)
+    summarizer_ms = mean(r["summarizer_latency_ms"] for r in with_summary)
+    return (
+        f" La latencia no la manda la entrada: los turnos con {fmt(tokens_single)} tokens de entrada de media y una sola llamada "
+        f"(turno 1 con adjunto grande) responden en {fmt(p50_single)} ms P50, mientras que los turnos con summarizer, con menos entrada "
+        f"({fmt(tokens_summary)} tokens), tardan {fmt(p50_summary)} ms: encadenan dos llamadas ({fmt(summarizer_ms)} ms del summarizer de media) "
+        f"y generan más salida ({fmt(out_summary)} tokens frente a {fmt(out_single)}) porque la estimación crece con el proyecto."
     )
 
 
@@ -266,7 +336,10 @@ def reading(rows: list[dict], meta: dict | None) -> str:
     att = {kb: group for (kb,), group in by(first, "attachment_kb").items()}
     att_recall = {kb: mean(r["attachment_recall"] for r in g) for kb, g in att.items() if kb}
     att_latency = {kb: percentile([r["latency_ms"] for r in (misses(g) or g)], 50) for kb, g in att.items()}
+    att_fits = {kb: g for kb, g in att.items() if kb and all((r["attachments_total_chars"] or 0) < ATTACHMENT_MAX_CHARS for r in g)}
+    fits_recall = mean(r["attachment_recall"] for g in att_fits.values() for r in g) if att_fits else None
     fake = bool(meta and meta.get("fake_llm"))
+    window = int((meta or {}).get("service", {}).get("session_max_turns") or 6)
 
     degradations = {
         "coste": (cost_ratio or 1) - 1,
@@ -279,25 +352,27 @@ def reading(rows: list[dict], meta: dict | None) -> str:
         f"**Dónde empieza a romperse mi CAG.** Con la ventana de {meta['service'].get('session_max_turns') if meta and meta.get('service') else 6} turnos, "
         f"el primer síntoma no es un error sino un coste: {'el summarizer entra en el turno ' + str(summarizer_onset) + ' (el primero que expulsa un turno de la ventana) y a partir de ahí cada turno paga dos llamadas' if summarizer_onset else 'el summarizer no llegó a activarse en esta tirada'}. "
         f"El coste del turno {last_n} multiplica por {fmt(cost_ratio, 2)} el del turno 1 (tokens de entrada ×{fmt(tokens_ratio, 2)}) y la latencia por {fmt(latency_ratio, 2)}; "
-        f"el {pct(over_latency)} de los turnos sin caché supera el presupuesto de latencia y el {pct(over_cost)} el de coste. "
-        f"La memoria se degrada en silencio: "
-        + "; ".join(
-            f"en `{s}` el recall del fact-tracker {'cae bajo el 60 % a partir del turno ' + str(breaks[s]) if breaks[s] else 'no baja del 60 % en ' + str(last_n) + ' turnos'} y termina en {pct(recall_last[s])}"
-            for s in scenarios
-        )
-        + f". El nombre del proyecto sigue en el título de la estimación en el {pct(title_last)} de las conversaciones en el turno {last_n}."
+        f"el {pct(over_latency)} de los turnos sin caché supera el presupuesto de latencia y el {pct(over_cost)} el de coste."
+        + _burst_sentence(rows, window)
+        + _latency_driver_sentence(misses(rows))
+        + _memory_sentence(scenarios, breaks, recall_last, last_n)
+        + f" El nombre del proyecto sigue en el título de la estimación en el {pct(title_last)} de las conversaciones en el turno {last_n}."
     )
     att_sentence = ""
     if att_recall:
         worst = min(att_recall, key=lambda kb: att_recall[kb] or 0)
         att_sentence = (
             f" Con adjuntos, la latencia P50 del turno 1 pasa de {fmt(att_latency.get(0))} ms sin adjunto a {fmt(att_latency.get(max(att_latency)))} ms con {max(att_latency)} KB, "
-            f"y el recall de los marcadores del PDF baja hasta {pct(att_recall[worst])} con {worst} KB"
+            + (f"y el recall de los marcadores del PDF baja hasta {pct(att_recall[worst])} con {worst} KB" if (att_recall[worst] or 0) < 1
+               else "y el recall de los marcadores del PDF se mantiene en el 100 % en todos los tamaños")
+            + (f" (con los que caben enteros, {', '.join(f'{kb} KB' for kb in sorted(att_fits))}, el modelo ya deja fuera marcadores: recall medio {pct(fits_recall)})"
+               if fits_recall is not None and fits_recall < 1 else "")
             + ("; el tope `ATTACHMENT_MAX_CHARS=60.000` trunca el de 100 KB, así que los marcadores del 75 % y del final del documento nunca llegan al modelo." if max(att_latency) >= 100 else ".")
         )
     p2 = (
         f"**Qué dimensión domina y cuándo saltar a RAG.** Entre coste ({_signed_pct(degradations['coste'])}), latencia ({_signed_pct(degradations['latencia'])}) y pérdida de memoria "
-        f"({_signed_pct(-degradations['pérdida de memoria'])} de recall), la dimensión que más se degrada entre el turno 1 y el {last_n} es **{dominant}**. "
+        f"({'recall intacto' if round(degradations['pérdida de memoria'] * 100) == 0 else _signed_pct(-degradations['pérdida de memoria']) + ' de recall'}), "
+        f"la dimensión que más se degrada entre el turno 1 y el {last_n} es **{dominant}**. "
         f"Coste y latencia crecen de forma acotada porque la ventana y el resumen ponen un techo al contexto; lo que no está acotado es lo que se pierde para mantener ese techo: "
         f"el resumen está limitado a 1.500 caracteres y las anclas a 24, así que cada turno nuevo desplaza hechos antiguos. "
         f"Los hechos que sobreviven lo hacen por la memoria estructurada (`project_metadata`) o por una ancla literal; los que se reformulan en el resumen cuentan como perdidos."
@@ -391,6 +466,9 @@ def render(rows: list[dict], meta: dict | None = None) -> str:
         "registra 0 tokens y 0 USD.",
         "- Los PDFs son sintéticos y deterministas (`evals/stress/fixtures/build_pdfs.py`); llevan cinco marcadores repartidos por el documento "
         "para medir el recall del adjunto en la estimación. No se versionan: el runner los regenera.",
+        "- La caché de respuestas vive en memoria del proceso del servicio, así que el servicio se arranca justo antes de la tirada (caché vacía). "
+        "Si se reutiliza un servicio que ya respondió a esos mismos prompts (por ejemplo tras una pasada de humo), la repetición 1 acierta en caché "
+        "desde el primer turno y deja de medir al LLM.",
         "- No se ha tocado ninguna constante entre medidas (ventana de 6, resumen de 1.500 caracteres, 24 anclas, tope de adjunto de 60.000).",
         "",
     ]
