@@ -783,6 +783,11 @@ Respuesta: `chunks` (cada uno con `chunk_id`, `text`, `metadata`, `token_count` 
 Códigos: **200** correcto, **422** body inválido (lo gestiona FastAPI con Pydantic), **500** si falta
 `OPENAI_API_KEY` o la API de embeddings falla (mensaje genérico al cliente, detalle en los logs).
 
+> El orden importa: la comprobación de la API key vive **dentro del handler**, no en la dependencia. FastAPI
+> resuelve las dependencias antes de validar el body, así que exigir la clave desde una dependencia convertía
+> en **500** cualquier petición mal formada en un entorno sin clave. Lo detectó el CI, que corre sin secrets.
+> Con la clave ausente, un body inválido sigue devolviendo 422 y solo un body válido llega al 500.
+
 ### `scripts/compare.py`: similitud entre dos textos
 
 ```bash

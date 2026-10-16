@@ -286,11 +286,17 @@ def test_ingest_endpoint_validation_errors(client_with_fake_embedder):
 def test_ingest_endpoint_without_api_key_is_500_with_clear_message():
     app.dependency_overrides[get_settings] = lambda: make_settings(openai_api_key=None)
     try:
-        response = TestClient(app).post("/embeddings/ingest", json={"budgets": [STATEMENT_BUDGET]})
+        client = TestClient(app)
+        response = client.post("/embeddings/ingest", json={"budgets": [STATEMENT_BUDGET]})
+        # Sin clave, un body inválido sigue siendo 422: la validación de Pydantic manda sobre el fallo de
+        # configuración. Si la clave se comprobara en la dependencia, FastAPI la resolvería antes de validar
+        # el body y devolvería 500 para cualquier petición mal formada (lo detectó el CI, que no tiene secrets).
+        invalid = client.post("/embeddings/ingest", json={"budgets": []})
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 500
     assert "OPENAI_API_KEY" in response.json()["detail"]
+    assert invalid.status_code == 422
 
 
 def test_ingest_endpoint_is_documented_in_openapi():

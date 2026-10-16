@@ -37,13 +37,18 @@ def _embedder_for(api_key: str, model: str, batch_size: int) -> OpenAIEmbedder:
     return OpenAIEmbedder(api_key=api_key, model=model, batch_size=batch_size)
 
 
-def get_embedder(settings: Settings = Depends(get_settings)) -> OpenAIEmbedder:
+def get_embedder(settings: Settings = Depends(get_settings)) -> OpenAIEmbedder | None:
+    """El embedder configurado, o `None` si no hay `OPENAI_API_KEY`.
+
+    Devuelve `None` en vez de lanzar: FastAPI resuelve las dependencias **antes** de validar el body, así que
+    un `HTTPException` aquí convertiría en 500 cualquier petición mal formada en un entorno sin clave (es lo
+    que pasaba en el CI, que no tiene secrets). El contrato del enunciado es 422 para la validación de
+    Pydantic y 500 para los fallos del servicio, y ese orden solo se respeta comprobando la clave dentro del
+    handler, cuando el body ya ha pasado por Pydantic.
+    """
     api_key = (settings.openai_api_key or "").strip()
     if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="El pipeline de embeddings necesita OPENAI_API_KEY en el archivo .env (los embeddings se generan siempre con OpenAI).",
-        )
+        return None
     return _embedder_for(api_key, settings.embedding_model, settings.embedding_batch_size)
 
 
@@ -59,11 +64,16 @@ def get_embedder(settings: Settings = Depends(get_settings)) -> OpenAIEmbedder:
 def ingest(
     request: IngestRequest,
     chunker: JSONStructuralChunker = Depends(get_chunker),
-    embedder: OpenAIEmbedder = Depends(get_embedder),
+    embedder: OpenAIEmbedder | None = Depends(get_embedder),
 ) -> IngestResponse:
     """Un chunk por componente (con cabecera de contexto del presupuesto padre), vectorizado con
     `text-embedding-3-small` en lotes. Devuelve los chunks con su vector y las estadísticas de la ingesta.
     Los vectores no se persisten todavía: eso llega con PostgreSQL + pgvector en la sesión 08."""
+    if embedder is None:
+        raise HTTPException(
+            status_code=500,
+            detail="El pipeline de embeddings necesita OPENAI_API_KEY en el archivo .env (los embeddings se generan siempre con OpenAI).",
+        )
     started = time.perf_counter()
     chunks = chunker.chunk(request.budgets)
     try:
