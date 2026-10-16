@@ -12,9 +12,8 @@ __pycache__
 .ruff_cache
 .git
 
-# No hace falta en la imagen
+# No hace falta en la imagen (scripts/ y data/ sí entran: compare.py y el sample se usan dentro del contenedor)
 tests
-scripts
 Dockerfile
 docker-compose.yml
 .dockerignore

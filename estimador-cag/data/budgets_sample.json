@@ -1,0 +1,809 @@
+[
+  {
+    "budget_id": "BUD-2024-014",
+    "client_metadata": {"name": "FintechCorp", "sector": "finance", "country": "ES"},
+    "project_summary": "Mobile banking API with OAuth 2.0 authentication and PSD2 compliance",
+    "main_technology": "ruby_on_rails",
+    "year": 2024,
+    "total_estimated_hours": 480,
+    "components": [
+      {
+        "component_id": "AUTH-001",
+        "name": "OAuth 2.0 authentication backend",
+        "description": "Implementation of OAuth 2.0 flows (authorization code, refresh token) with JWT-based session management, multi-tenant token isolation, and rate limiting per client.",
+        "tech_stack": ["ruby_on_rails", "postgresql", "redis"],
+        "estimated_hours": 120,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "PSD2-002",
+        "name": "PSD2 open banking connectors",
+        "description": "Integration with the account information (AIS) and payment initiation (PIS) APIs of three Spanish banks, including consent management, strong customer authentication redirects and certificate rotation.",
+        "tech_stack": ["ruby_on_rails", "sidekiq", "postgresql"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": ["AUTH-001"]
+      },
+      {
+        "component_id": "ACC-003",
+        "name": "Accounts and transactions API",
+        "description": "REST endpoints for account balances, transaction history with pagination and filtering, and CSV export, backed by a read model refreshed from the banking connectors.",
+        "tech_stack": ["ruby_on_rails", "postgresql"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": ["PSD2-002"]
+      },
+      {
+        "component_id": "NOTIF-004",
+        "name": "Push and email notifications",
+        "description": "Transactional notifications for payments, low balance and security events through Firebase Cloud Messaging and SendGrid, with user preferences and quiet hours.",
+        "tech_stack": ["ruby_on_rails", "sidekiq", "firebase"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["ACC-003"]
+      },
+      {
+        "component_id": "OPS-005",
+        "name": "Observability and audit log",
+        "description": "Structured logging, request tracing and an immutable audit trail of every money movement and consent change, with a 7-year retention policy required by the regulator.",
+        "tech_stack": ["ruby_on_rails", "elasticsearch", "aws_s3"],
+        "estimated_hours": 70,
+        "complexity": "medium",
+        "dependencies": ["AUTH-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2023-007",
+    "client_metadata": {"name": "Lendly", "sector": "finance", "country": "PT"},
+    "project_summary": "Consumer loan origination platform with automated credit scoring and e-signature",
+    "main_technology": "django",
+    "year": 2023,
+    "total_estimated_hours": 610,
+    "components": [
+      {
+        "component_id": "ONB-001",
+        "name": "Applicant onboarding and KYC",
+        "description": "Multi-step web onboarding with identity document capture, liveness check through a third-party KYC provider and sanctions list screening before a loan application can be submitted.",
+        "tech_stack": ["django", "react", "postgresql"],
+        "estimated_hours": 130,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "SCORE-002",
+        "name": "Credit scoring engine",
+        "description": "Rule-based scoring combined with a logistic regression model over bureau data and bank statements, exposing a decision endpoint with explainability fields for each rejected application.",
+        "tech_stack": ["python", "scikit_learn", "fastapi"],
+        "estimated_hours": 160,
+        "complexity": "high",
+        "dependencies": ["ONB-001"]
+      },
+      {
+        "component_id": "CONTRACT-003",
+        "name": "Contract generation and e-signature",
+        "description": "PDF loan contract generation from templates with the approved conditions and a qualified electronic signature flow integrated with a European trust service provider.",
+        "tech_stack": ["django", "weasyprint", "docusign"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": ["SCORE-002"]
+      },
+      {
+        "component_id": "PAY-004",
+        "name": "Disbursement and repayment schedule",
+        "description": "SEPA credit transfer for disbursement, amortisation schedule calculation, direct debit collection of instalments and dunning workflow for late payments.",
+        "tech_stack": ["django", "celery", "postgresql"],
+        "estimated_hours": 120,
+        "complexity": "high",
+        "dependencies": ["CONTRACT-003"]
+      },
+      {
+        "component_id": "BACK-005",
+        "name": "Back-office portal",
+        "description": "Internal web app for credit analysts to review applications, override scores with a justification, and monitor the loan portfolio with basic dashboards.",
+        "tech_stack": ["django", "react", "chartjs"],
+        "estimated_hours": 110,
+        "complexity": "medium",
+        "dependencies": ["SCORE-002"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2025-003",
+    "client_metadata": {"name": "Nordpay", "sector": "finance", "country": "DE"},
+    "project_summary": "Payment gateway with card tokenisation, 3-D Secure and merchant dashboard",
+    "main_technology": "spring_boot",
+    "year": 2025,
+    "total_estimated_hours": 560,
+    "components": [
+      {
+        "component_id": "TOKEN-001",
+        "name": "Card tokenisation vault",
+        "description": "PCI DSS scoped service that stores card data encrypted with HSM-backed keys and exposes tokens to the rest of the platform, with key rotation and detokenisation audit.",
+        "tech_stack": ["spring_boot", "java", "postgresql", "aws_kms"],
+        "estimated_hours": 150,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "3DS-002",
+        "name": "3-D Secure 2 authentication flow",
+        "description": "Integration with the card schemes' 3DS2 directory servers, challenge and frictionless flows, and fallback handling when the issuer ACS is unavailable.",
+        "tech_stack": ["spring_boot", "java"],
+        "estimated_hours": 110,
+        "complexity": "high",
+        "dependencies": ["TOKEN-001"]
+      },
+      {
+        "component_id": "ACQ-003",
+        "name": "Acquirer routing and settlement",
+        "description": "Routing of authorisations to two acquiring banks by BIN and cost, retry on soft declines, daily settlement file reconciliation and chargeback intake.",
+        "tech_stack": ["spring_boot", "kafka", "postgresql"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": ["TOKEN-001", "3DS-002"]
+      },
+      {
+        "component_id": "DASH-004",
+        "name": "Merchant dashboard",
+        "description": "Web dashboard for merchants with transaction search, refunds, payout calendar and API key management, including role-based access for merchant staff.",
+        "tech_stack": ["angular", "typescript", "spring_boot"],
+        "estimated_hours": 100,
+        "complexity": "medium",
+        "dependencies": ["ACQ-003"]
+      },
+      {
+        "component_id": "WEBHOOK-005",
+        "name": "Webhooks and merchant SDK",
+        "description": "Signed webhook delivery with retries and a small JavaScript SDK for hosted payment fields so merchants never touch raw card data.",
+        "tech_stack": ["spring_boot", "typescript"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["TOKEN-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2022-019",
+    "client_metadata": {"name": "Capitalia Wealth", "sector": "finance", "country": "ES"},
+    "project_summary": "Robo-advisor web app with portfolio rebalancing and regulatory suitability test",
+    "main_technology": "fastapi",
+    "year": 2022,
+    "total_estimated_hours": 400,
+    "components": [
+      {
+        "component_id": "SUIT-001",
+        "name": "MiFID II suitability questionnaire",
+        "description": "Configurable questionnaire that profiles the investor's risk tolerance and knowledge, stores versioned answers and blocks investment until a valid profile exists.",
+        "tech_stack": ["fastapi", "postgresql", "vue"],
+        "estimated_hours": 70,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "PORT-002",
+        "name": "Model portfolios and rebalancing engine",
+        "description": "Definition of five model portfolios of ETFs, drift detection against target weights and generation of rebalancing orders with tax-lot awareness.",
+        "tech_stack": ["python", "pandas", "fastapi"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": ["SUIT-001"]
+      },
+      {
+        "component_id": "BROKER-003",
+        "name": "Broker order routing",
+        "description": "Integration with the custodian broker API to place, cancel and reconcile orders, including end-of-day position reconciliation and discrepancy alerts.",
+        "tech_stack": ["fastapi", "httpx", "postgresql"],
+        "estimated_hours": 100,
+        "complexity": "high",
+        "dependencies": ["PORT-002"]
+      },
+      {
+        "component_id": "UI-004",
+        "name": "Investor web app",
+        "description": "Responsive single-page app showing portfolio performance, contributions, documents and the rebalancing history, with onboarding funnel analytics.",
+        "tech_stack": ["vue", "typescript", "tailwind"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": ["PORT-002"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-021",
+    "client_metadata": {"name": "Moda Urbana", "sector": "ecommerce", "country": "ES"},
+    "project_summary": "Headless fashion e-commerce storefront with product catalog search and Stripe checkout",
+    "main_technology": "nextjs",
+    "year": 2024,
+    "total_estimated_hours": 430,
+    "components": [
+      {
+        "component_id": "CAT-001",
+        "name": "Product catalog service",
+        "description": "Product, variant and inventory model with sizes and colours, bulk import from the ERP, image processing pipeline and a public read API with caching.",
+        "tech_stack": ["nestjs", "postgresql", "redis", "aws_s3"],
+        "estimated_hours": 110,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "SEARCH-002",
+        "name": "Catalog search and filtering",
+        "description": "Full-text search with typo tolerance, faceted filtering by category, size, colour and price, and merchandising rules to pin or boost products.",
+        "tech_stack": ["meilisearch", "nestjs"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["CAT-001"]
+      },
+      {
+        "component_id": "CART-003",
+        "name": "Cart and Stripe checkout",
+        "description": "Persistent cart for guests and logged-in users, promo codes, shipping rate calculation and Stripe Checkout with Apple Pay and Bizum, including webhook-driven order confirmation.",
+        "tech_stack": ["nextjs", "stripe", "nestjs"],
+        "estimated_hours": 100,
+        "complexity": "high",
+        "dependencies": ["CAT-001"]
+      },
+      {
+        "component_id": "FRONT-004",
+        "name": "Storefront UI",
+        "description": "Server-rendered storefront with product listing, product detail, lookbook pages and SEO metadata, built on a shared design system with Lighthouse performance targets.",
+        "tech_stack": ["nextjs", "react", "tailwind"],
+        "estimated_hours": 120,
+        "complexity": "medium",
+        "dependencies": ["CAT-001", "SEARCH-002", "CART-003"]
+      },
+      {
+        "component_id": "ORD-005",
+        "name": "Order management and returns",
+        "description": "Order lifecycle (paid, fulfilled, shipped, delivered), carrier label generation and a self-service returns flow with refund through Stripe.",
+        "tech_stack": ["nestjs", "postgresql", "stripe"],
+        "estimated_hours": 40,
+        "complexity": "medium",
+        "dependencies": ["CART-003"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2023-012",
+    "client_metadata": {"name": "Ferretería Online", "sector": "ecommerce", "country": "ES"},
+    "project_summary": "B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration",
+    "main_technology": "laravel",
+    "year": 2023,
+    "total_estimated_hours": 520,
+    "components": [
+      {
+        "component_id": "VEND-001",
+        "name": "Vendor onboarding and catalog upload",
+        "description": "Vendor accounts with company verification, CSV and Excel catalog upload with validation reports, and approval workflow before products go live.",
+        "tech_stack": ["laravel", "php", "mysql"],
+        "estimated_hours": 100,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "PRICE-002",
+        "name": "Tiered pricing and customer groups",
+        "description": "Price lists per customer group, volume discounts, negotiated prices per account and VAT handling for intra-community sales.",
+        "tech_stack": ["laravel", "mysql"],
+        "estimated_hours": 90,
+        "complexity": "high",
+        "dependencies": ["VEND-001"]
+      },
+      {
+        "component_id": "QUOTE-003",
+        "name": "Request-for-quote workflow",
+        "description": "Buyers request quotes for large orders, vendors respond with offers and expiry dates, and accepted quotes convert into orders with the agreed prices.",
+        "tech_stack": ["laravel", "livewire", "mysql"],
+        "estimated_hours": 110,
+        "complexity": "medium",
+        "dependencies": ["PRICE-002"]
+      },
+      {
+        "component_id": "ERP-004",
+        "name": "ERP integration (SAP Business One)",
+        "description": "Bidirectional synchronisation of customers, stock and invoices with SAP Business One through its Service Layer, with retry queues and a reconciliation report.",
+        "tech_stack": ["laravel", "rabbitmq", "sap_service_layer"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": ["PRICE-002", "QUOTE-003"]
+      },
+      {
+        "component_id": "SHIP-005",
+        "name": "Shipping and pallet logistics",
+        "description": "Shipping cost calculation by weight, volume and pallet count, integration with two carriers for labels and tracking, and delivery slot selection at checkout.",
+        "tech_stack": ["laravel", "mysql"],
+        "estimated_hours": 80,
+        "complexity": "medium",
+        "dependencies": ["QUOTE-003"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2025-008",
+    "client_metadata": {"name": "La Espiga Artesana", "sector": "ecommerce", "country": "ES"},
+    "project_summary": "Online bakery shop with next-day delivery slots, subscriptions and WooCommerce migration",
+    "main_technology": "wordpress",
+    "year": 2025,
+    "total_estimated_hours": 290,
+    "components": [
+      {
+        "component_id": "MIG-001",
+        "name": "WooCommerce migration and catalog",
+        "description": "Migration of 180 products and 4.000 customers from a legacy Prestashop into WooCommerce, with URL redirects and a custom product type for daily-baked goods.",
+        "tech_stack": ["wordpress", "woocommerce", "php", "mysql"],
+        "estimated_hours": 70,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "SLOT-002",
+        "name": "Delivery slots and 48-hour lead time",
+        "description": "Checkout step that offers delivery windows by postal code with capacity limits per slot and enforces a minimum 48-hour lead time for custom cakes.",
+        "tech_stack": ["woocommerce", "php", "javascript"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["MIG-001"]
+      },
+      {
+        "component_id": "SUB-003",
+        "name": "Bread subscriptions",
+        "description": "Weekly and biweekly subscriptions with pause and skip, recurring payments through Stripe and Bizum, and automatic production list for the bakery each morning.",
+        "tech_stack": ["woocommerce", "stripe", "php"],
+        "estimated_hours": 80,
+        "complexity": "high",
+        "dependencies": ["SLOT-002"]
+      },
+      {
+        "component_id": "I18N-004",
+        "name": "Bilingual storefront (Spanish and Catalan)",
+        "description": "Translation of catalog, checkout and transactional emails into Catalan with language switch and localised URLs, keeping a single order database.",
+        "tech_stack": ["wordpress", "wpml"],
+        "estimated_hours": 40,
+        "complexity": "low",
+        "dependencies": ["MIG-001"]
+      },
+      {
+        "component_id": "RPT-005",
+        "name": "Sales export to Excel",
+        "description": "Daily and monthly sales, product and delivery-route reports exported to Excel for the accountant, scheduled by email.",
+        "tech_stack": ["php", "phpspreadsheet"],
+        "estimated_hours": 40,
+        "complexity": "low",
+        "dependencies": ["SUB-003"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2022-004",
+    "client_metadata": {"name": "Casa & Jardín", "sector": "ecommerce", "country": "MX"},
+    "project_summary": "Mobile shopping app for a home and garden retailer with loyalty points and store pickup",
+    "main_technology": "react_native",
+    "year": 2022,
+    "total_estimated_hours": 450,
+    "components": [
+      {
+        "component_id": "APP-001",
+        "name": "Cross-platform mobile app shell",
+        "description": "React Native app for iOS and Android with navigation, offline product browsing cache, push notifications and crash reporting, published to both stores.",
+        "tech_stack": ["react_native", "typescript", "expo"],
+        "estimated_hours": 120,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "AUTH-002",
+        "name": "Customer login and social sign-in",
+        "description": "Email, Google and Apple sign-in with secure token storage, account merge for existing web customers and passwordless magic-link recovery.",
+        "tech_stack": ["react_native", "firebase_auth", "node_express"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["APP-001"]
+      },
+      {
+        "component_id": "LOYAL-003",
+        "name": "Loyalty points and coupons",
+        "description": "Points accrual on purchases, tiers with benefits, coupon redemption at checkout and a monthly expiry job, exposed through a rules-driven service.",
+        "tech_stack": ["node_express", "postgresql", "redis"],
+        "estimated_hours": 100,
+        "complexity": "high",
+        "dependencies": ["AUTH-002"]
+      },
+      {
+        "component_id": "PICK-004",
+        "name": "Buy online, pick up in store",
+        "description": "Store selector with real-time stock per store, pickup time reservation, QR code for collection and staff app screen to mark orders as handed over.",
+        "tech_stack": ["node_express", "postgresql", "react_native"],
+        "estimated_hours": 110,
+        "complexity": "high",
+        "dependencies": ["APP-001", "AUTH-002"]
+      },
+      {
+        "component_id": "PAY-005",
+        "name": "In-app payments",
+        "description": "Card payments with Conekta and OXXO cash vouchers, saved cards per customer and refund handling for cancelled pickups.",
+        "tech_stack": ["react_native", "conekta", "node_express"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["PICK-004"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-002",
+    "client_metadata": {"name": "Clínica Dental Sonrisa", "sector": "healthcare", "country": "ES"},
+    "project_summary": "Appointment booking and patient portal for a dental clinic network with reminders",
+    "main_technology": "fastapi",
+    "year": 2024,
+    "total_estimated_hours": 330,
+    "components": [
+      {
+        "component_id": "BOOK-001",
+        "name": "Online appointment booking",
+        "description": "Availability engine per dentist, chair and treatment duration, with double-booking prevention, waiting list and rescheduling from a public booking page.",
+        "tech_stack": ["fastapi", "postgresql", "react"],
+        "estimated_hours": 110,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "REM-002",
+        "name": "SMS and WhatsApp reminders",
+        "description": "Automated reminders 48 and 2 hours before each visit with confirm or cancel replies, through Twilio, and a no-show report per clinic.",
+        "tech_stack": ["fastapi", "twilio", "celery"],
+        "estimated_hours": 50,
+        "complexity": "medium",
+        "dependencies": ["BOOK-001"]
+      },
+      {
+        "component_id": "PORTAL-003",
+        "name": "Patient portal",
+        "description": "Patients log in to see upcoming visits, treatment plans, invoices and radiographs, with document download and consent form signature.",
+        "tech_stack": ["react", "fastapi", "postgresql"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": ["BOOK-001"]
+      },
+      {
+        "component_id": "CLIN-004",
+        "name": "Clinical records integration",
+        "description": "Read-only synchronisation of treatment plans and visit history from the clinic management software through its HL7 FHIR export, mapped to the portal model.",
+        "tech_stack": ["fastapi", "hl7_fhir", "postgresql"],
+        "estimated_hours": 80,
+        "complexity": "high",
+        "dependencies": ["PORTAL-003"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2023-016",
+    "client_metadata": {"name": "MediHome", "sector": "healthcare", "country": "FR"},
+    "project_summary": "Telemedicine platform with video consultations, e-prescriptions and GDPR-compliant medical records",
+    "main_technology": "dotnet",
+    "year": 2023,
+    "total_estimated_hours": 690,
+    "components": [
+      {
+        "component_id": "VIDEO-001",
+        "name": "Video consultation module",
+        "description": "WebRTC video rooms with waiting room, screen sharing of test results, connection quality fallback to audio and consultation recording with explicit patient consent.",
+        "tech_stack": ["dotnet", "csharp", "webrtc", "azure_communication_services"],
+        "estimated_hours": 150,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "EHR-002",
+        "name": "Electronic health record",
+        "description": "Structured medical record with encounters, diagnoses coded in ICD-10, allergies and medication list, field-level encryption and full access audit trail.",
+        "tech_stack": ["dotnet", "sql_server", "azure_key_vault"],
+        "estimated_hours": 180,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "RX-003",
+        "name": "Electronic prescriptions",
+        "description": "Prescription drafting with drug interaction warnings, digital signature by the physician and transmission to the national e-prescription service.",
+        "tech_stack": ["dotnet", "csharp", "sql_server"],
+        "estimated_hours": 120,
+        "complexity": "high",
+        "dependencies": ["EHR-002"]
+      },
+      {
+        "component_id": "SCHED-004",
+        "name": "Physician scheduling and billing",
+        "description": "Physician availability calendar, patient booking, insurance coverage check and invoicing with automatic reimbursement claims.",
+        "tech_stack": ["dotnet", "angular", "sql_server"],
+        "estimated_hours": 130,
+        "complexity": "medium",
+        "dependencies": ["VIDEO-001"]
+      },
+      {
+        "component_id": "GDPR-005",
+        "name": "GDPR consent and data subject rights",
+        "description": "Consent management per processing purpose, data export in machine-readable format, right-to-erasure workflow with legal retention exceptions and a DPO audit console.",
+        "tech_stack": ["dotnet", "sql_server"],
+        "estimated_hours": 110,
+        "complexity": "high",
+        "dependencies": ["EHR-002"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2025-011",
+    "client_metadata": {"name": "Vitalab Diagnostics", "sector": "healthcare", "country": "ES"},
+    "project_summary": "Laboratory results portal and HL7 integration with analyser instruments",
+    "main_technology": "spring_boot",
+    "year": 2025,
+    "total_estimated_hours": 370,
+    "components": [
+      {
+        "component_id": "LIS-001",
+        "name": "Analyser interface (HL7 v2 and ASTM)",
+        "description": "Listener services that receive results from five laboratory analysers over HL7 v2 and ASTM, normalise units and reference ranges and flag abnormal values.",
+        "tech_stack": ["spring_boot", "java", "hapi_hl7", "postgresql"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "VAL-002",
+        "name": "Result validation workflow",
+        "description": "Two-step validation by technician and pathologist with delta checks against previous results, comments and automatic release of normal panels.",
+        "tech_stack": ["spring_boot", "postgresql"],
+        "estimated_hours": 80,
+        "complexity": "medium",
+        "dependencies": ["LIS-001"]
+      },
+      {
+        "component_id": "PORTAL-003",
+        "name": "Patient and physician results portal",
+        "description": "Secure portal where patients download PDF reports and physicians see cumulative result charts, with SMS notification when a report is released.",
+        "tech_stack": ["react", "spring_boot", "twilio"],
+        "estimated_hours": 100,
+        "complexity": "medium",
+        "dependencies": ["VAL-002"]
+      },
+      {
+        "component_id": "BILL-004",
+        "name": "Insurance billing export",
+        "description": "Monthly billing files per insurer with the tests performed, price lists and rejected-claim handling, exported in the formats each insurer requires.",
+        "tech_stack": ["spring_boot", "postgresql"],
+        "estimated_hours": 50,
+        "complexity": "low",
+        "dependencies": ["VAL-002"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-030",
+    "client_metadata": {"name": "Aceros del Norte", "sector": "industrial", "country": "ES"},
+    "project_summary": "Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards",
+    "main_technology": "dotnet",
+    "year": 2024,
+    "total_estimated_hours": 760,
+    "components": [
+      {
+        "component_id": "PLC-001",
+        "name": "Shop-floor data acquisition",
+        "description": "OPC UA and Modbus TCP collectors for 40 machines capturing counters, states and alarms every second into a time-series store, with buffering during network outages and a device health monitor. The collectors run on edge gateways in each production line, support hot configuration reload when a new machine is commissioned, expose Prometheus metrics for the IT team, and include a replay tool to re-ingest buffered data after an outage so that the OEE calculations downstream remain complete; the plant operates 24/7 in three shifts and any gap in the data invalidates the shift report, which is why this component carries most of the integration risk of the project.",
+        "tech_stack": ["dotnet", "csharp", "opc_ua", "timescaledb"],
+        "estimated_hours": 200,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "WO-002",
+        "name": "Work order execution",
+        "description": "Download of production orders from SAP, operator terminal to start, pause and complete operations, material consumption and traceability of heats and coils.",
+        "tech_stack": ["dotnet", "blazor", "sql_server"],
+        "estimated_hours": 180,
+        "complexity": "high",
+        "dependencies": ["PLC-001"]
+      },
+      {
+        "component_id": "QUAL-003",
+        "name": "Quality inspections and non-conformities",
+        "description": "Inspection plans per product, sampling results capture with tolerances, non-conformity reports with photos and blocking of affected lots.",
+        "tech_stack": ["dotnet", "blazor", "sql_server"],
+        "estimated_hours": 120,
+        "complexity": "medium",
+        "dependencies": ["WO-002"]
+      },
+      {
+        "component_id": "OEE-004",
+        "name": "OEE and downtime dashboards",
+        "description": "Availability, performance and quality calculation per machine and shift, downtime reason coding by operators and Grafana dashboards for plant managers.",
+        "tech_stack": ["grafana", "timescaledb", "dotnet"],
+        "estimated_hours": 110,
+        "complexity": "medium",
+        "dependencies": ["PLC-001", "WO-002"]
+      },
+      {
+        "component_id": "MAINT-005",
+        "name": "Maintenance requests",
+        "description": "Operators raise maintenance requests from the terminal, maintenance team schedules interventions, and the system links downtime events to work done.",
+        "tech_stack": ["dotnet", "sql_server"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": ["OEE-004"]
+      },
+      {
+        "component_id": "SAP-006",
+        "name": "SAP PP confirmations",
+        "description": "Posting of production confirmations, scrap and goods movements back to SAP PP through IDocs with error queue and manual reprocessing screen.",
+        "tech_stack": ["dotnet", "sap_idoc", "rabbitmq"],
+        "estimated_hours": 60,
+        "complexity": "high",
+        "dependencies": ["WO-002"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2023-025",
+    "client_metadata": {"name": "Frío Industrial Levante", "sector": "industrial", "country": "ES"},
+    "project_summary": "IoT predictive maintenance platform for industrial refrigeration units",
+    "main_technology": "go",
+    "year": 2023,
+    "total_estimated_hours": 540,
+    "components": [
+      {
+        "component_id": "ING-001",
+        "name": "Telemetry ingestion",
+        "description": "MQTT broker and Go ingestion service receiving temperature, pressure and compressor cycles from 2.000 units, with schema validation, deduplication and storage in a time-series database.",
+        "tech_stack": ["go", "mqtt", "timescaledb", "kubernetes"],
+        "estimated_hours": 130,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "ML-002",
+        "name": "Anomaly detection and failure prediction",
+        "description": "Feature pipeline over telemetry windows and a gradient boosting model predicting compressor failure within 14 days, retrained weekly with technician feedback labels.",
+        "tech_stack": ["python", "xgboost", "airflow"],
+        "estimated_hours": 160,
+        "complexity": "high",
+        "dependencies": ["ING-001"]
+      },
+      {
+        "component_id": "ALERT-003",
+        "name": "Alerting and technician dispatch",
+        "description": "Alert rules combining thresholds and model scores, escalation policies, and automatic creation of service tickets assigned to the nearest technician.",
+        "tech_stack": ["go", "postgresql", "twilio"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": ["ML-002"]
+      },
+      {
+        "component_id": "FLEET-004",
+        "name": "Fleet dashboard",
+        "description": "Map and list view of all units with live status, health score history per unit, filters by customer and site, and export of maintenance history.",
+        "tech_stack": ["react", "typescript", "mapbox"],
+        "estimated_hours": 100,
+        "complexity": "medium",
+        "dependencies": ["ING-001", "ALERT-003"]
+      },
+      {
+        "component_id": "OTA-005",
+        "name": "Firmware over-the-air updates",
+        "description": "Staged firmware rollout to gateways with signed packages, rollback on failed health check and progress reporting per batch.",
+        "tech_stack": ["go", "aws_s3"],
+        "estimated_hours": 60,
+        "complexity": "high",
+        "dependencies": ["ING-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2025-017",
+    "client_metadata": {"name": "Envases Plásticos Ibéricos", "sector": "industrial", "country": "ES"},
+    "project_summary": "Warehouse and inventory management for a packaging manufacturer with barcode scanning",
+    "main_technology": "django",
+    "year": 2025,
+    "total_estimated_hours": 380,
+    "components": [
+      {
+        "component_id": "INV-001",
+        "name": "Inventory and locations model",
+        "description": "Multi-warehouse stock with bins, lots and expiry dates, stock movements ledger and cycle counting with variance approval.",
+        "tech_stack": ["django", "postgresql"],
+        "estimated_hours": 100,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "SCAN-002",
+        "name": "Barcode scanning PWA",
+        "description": "Progressive web app for rugged Android scanners covering receiving, put-away, picking and shipping, working offline and syncing when connectivity returns.",
+        "tech_stack": ["react", "pwa", "django"],
+        "estimated_hours": 120,
+        "complexity": "high",
+        "dependencies": ["INV-001"]
+      },
+      {
+        "component_id": "REPL-003",
+        "name": "Replenishment and purchase suggestions",
+        "description": "Minimum and maximum stock rules per item, consumption forecasting from the last twelve months and purchase order suggestions grouped by supplier.",
+        "tech_stack": ["django", "pandas", "celery"],
+        "estimated_hours": 80,
+        "complexity": "medium",
+        "dependencies": ["INV-001"]
+      },
+      {
+        "component_id": "LABEL-004",
+        "name": "GS1 label printing",
+        "description": "Generation of GS1-128 pallet and case labels with serial shipping container codes, printed on Zebra printers from the scanning app.",
+        "tech_stack": ["django", "zpl"],
+        "estimated_hours": 40,
+        "complexity": "low",
+        "dependencies": ["SCAN-002"]
+      },
+      {
+        "component_id": "RPT-005",
+        "name": "Stock reporting",
+        "description": "Stock valuation, ageing and turnover reports with Excel export and a nightly snapshot for the finance team.",
+        "tech_stack": ["django", "openpyxl"],
+        "estimated_hours": 40,
+        "complexity": "low",
+        "dependencies": ["INV-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-009",
+    "client_metadata": {"name": "RutaExpress", "sector": "logistics", "country": "ES"},
+    "project_summary": "Last-mile delivery platform with route optimisation, driver app and customer tracking",
+    "main_technology": "node_express",
+    "year": 2024,
+    "total_estimated_hours": 500,
+    "components": [
+      {
+        "component_id": "ROUTE-001",
+        "name": "Route optimisation engine",
+        "description": "Daily route planning for 120 vehicles using a vehicle routing solver with time windows, capacities and driver shifts, with re-optimisation when orders arrive during the day.",
+        "tech_stack": ["python", "ortools", "fastapi"],
+        "estimated_hours": 150,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "DRV-002",
+        "name": "Driver mobile app",
+        "description": "Flutter app with stop list, navigation hand-off, proof of delivery with photo and signature, failed delivery reasons and offline queue.",
+        "tech_stack": ["flutter", "dart", "node_express"],
+        "estimated_hours": 130,
+        "complexity": "medium",
+        "dependencies": ["ROUTE-001"]
+      },
+      {
+        "component_id": "TRACK-003",
+        "name": "Customer tracking page and notifications",
+        "description": "Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.",
+        "tech_stack": ["node_express", "react", "websockets", "twilio"],
+        "estimated_hours": 80,
+        "complexity": "medium",
+        "dependencies": ["DRV-002"]
+      },
+      {
+        "component_id": "ORD-004",
+        "name": "Order intake API and shipper portal",
+        "description": "REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.",
+        "tech_stack": ["node_express", "postgresql", "google_maps_api"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "BILL-005",
+        "name": "Shipper invoicing",
+        "description": "Monthly invoicing per shipper from delivered stops with tariff tables by zone and weight, credit notes for failed deliveries and export to the accounting system.",
+        "tech_stack": ["node_express", "postgresql"],
+        "estimated_hours": 50,
+        "complexity": "low",
+        "dependencies": ["ORD-004", "TRACK-003"]
+      }
+    ]
+  }
+]

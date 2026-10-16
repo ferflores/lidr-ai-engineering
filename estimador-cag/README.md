@@ -1,4 +1,4 @@
-# Estimador CAG — Proyecto 1 (Sesiones 02, 03, 04, 05 y pre-work 06)
+# Estimador CAG — Proyecto 1 (Sesiones 02, 03, 04, 05 y pre-work 06 y 07)
 
 Servicio **FastAPI** que recibe la transcripción de una reunión con un cliente más unos **parámetros
 tipados** (tarifa, tipo de proyecto, plazo, enfoque, nivel de detalle) y devuelve una **estimación de
@@ -19,6 +19,12 @@ deja un único evento **`turn_observed`** con sus 13 campos; sobre eso hay un **
 (`evals/`) y un **stress** del CAG (`evals/stress/`) cuyo resultado es [`evals/stress/REPORT.md`](evals/stress/REPORT.md).
 Ver [Compresión, tier, caché y observación](#compresión-del-historial-tier-caché-y-observación-sesión-05-directo)
 y [Stress del CAG](#stress-del-cag-pre-work-sesión-06).
+
+Desde el pre-work de la **sesión 07** hay un primer paso hacia la búsqueda semántica: el módulo
+`app/embedding_pipeline/` convierte presupuestos históricos en JSON en **chunks vectorizados**
+(`POST /embeddings/ingest`), con un chunker estructural (un componente = un chunk) y
+`text-embedding-3-small`. Los vectores se devuelven por HTTP, todavía **sin persistir**.
+Ver [Pipeline de embeddings](#pipeline-de-embeddings-pre-work-sesión-07).
 
 Arquitectura **CAG**: todo el contexto que necesita el modelo (estimaciones de ejemplo) viaja íntegro
 dentro del prompt en cada llamada. No hay base de datos ni retrieval; el único estado es el de las
@@ -90,7 +96,14 @@ estimador-cag/
 │   ├── services/observability.py       # el evento structlog `turn_observed` (13 campos + extras)
 │   ├── services/pricing.py     # precios por millón de tokens y cálculo del coste de cada llamada
 │   ├── clients/estimator_api.py        # cliente HTTP de la API que usa la interfaz de Streamlit
-│   └── context/examples.py     # estimaciones de ejemplo (el "conocimiento" del sistema)
+│   ├── context/examples.py     # estimaciones de ejemplo (el "conocimiento" del sistema)
+│   └── embedding_pipeline/     # pre-work sesión 07: presupuestos JSON → chunks → embeddings
+│       ├── schemas.py          # Budget, BudgetComponent, Chunk, EmbeddedChunk, IngestRequest/Response
+│       ├── chunker.py          # JSONStructuralChunker: un componente = un chunk, con cabecera del padre
+│       ├── embedder.py         # OpenAIEmbedder: text-embedding-3-small por lotes, reintentos y coste
+│       ├── similarity.py       # coseno, producto escalar y distancia euclidiana (biblioteca estándar)
+│       ├── router.py           # POST /embeddings/ingest
+│       └── SANITY_CHECK.md     # el deliverable del paso 7: las tres parejas y su lectura
 ├── prompts/                    # los prompts, fuera del código y versionados (ver prompts/README.md)
 │   └── estimacion/
 │       ├── v1/                 # template.toml + system.md.j2 + user.md.j2 (el prompt original, migrado)
@@ -118,8 +131,11 @@ estimador-cag/
 │   ├── estimar-sesion.sh       # conversación de tres turnos con curl (el tercero con PDF y Word adjuntos)
 │   ├── generar-adjuntos.py     # genera transcripciones/adjuntos/*.pdf y *.docx de ejemplo
 │   ├── comparar.py             # compara transcripciones: tokens, coste, ahorro y estimación
+│   ├── compare.py              # similitud coseno entre dos textos vía embeddings (sesión 07)
 │   ├── generar-json.sh         # crea transcripciones/*.json a partir de los .txt
 │   └── verificar.sh            # estructura + tests + arranque real + sesiones (lo usa el CI)
+├── data/
+│   └── budgets_sample.json     # 15 presupuestos históricos normalizados (sesión 07): 73 componentes, 4+ sectores
 ├── transcripciones/            # transcripciones de ejemplo (.txt, .json para curl, panaderia-turno-2/3 para la conversación)
 │   └── adjuntos/               # especificación técnica (PDF) y propuesta anterior (Word) de la panadería
 ├── docs/                       # comparativa de resultados (transcripción pobre vs. detallada)
@@ -232,6 +248,13 @@ Cómo está montado:
 | `LLM_OUTPUT_PRICE_PER_MTOK` | Precio en USD por millón de tokens de salida (opcional, sobrescribe la tabla) | tabla de `pricing.py` |
 
 Las API keys solo viven en `.env`, que está en `.gitignore`. Nunca aparecen en el código.
+
+Pre-work de la sesión 07 (pipeline de embeddings):
+
+| Variable | Por defecto | Para qué |
+|---|---|---|
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Modelo de embeddings (siempre de OpenAI, usa `OPENAI_API_KEY` aunque `LLM_PROVIDER` sea `anthropic`). |
+| `EMBEDDING_BATCH_SIZE` | `100` | Chunks por llamada a la API de embeddings. |
 
 ## Probar el endpoint
 
@@ -710,6 +733,132 @@ forma de ver el CAG:
   afirmaciones cuantitativas (ratios, porcentajes, turno de ruptura) se recalculan al regenerar, así que no
   pueden quedarse desactualizadas respecto a los datos.
 
+## Pipeline de embeddings (pre-work sesión 07)
+
+Primer paso hacia la búsqueda semántica: convertir los presupuestos históricos (la salida normalizada de la
+sesión 06) en vectores. Los vectores se generan **en memoria** y se devuelven por HTTP; la persistencia llega
+en la sesión 08 con PostgreSQL + pgvector. Ni la interfaz ni el estimador se tocan.
+
+```
+presupuestos JSON → JSONStructuralChunker → chunks (texto + metadata + token_count)
+                    (un componente = un chunk)        ↓
+                                              OpenAIEmbedder (lotes de 100)
+                                                      ↓
+                                     EmbeddedChunk[] + stats (tokens, coste)
+```
+
+### Arrancar y usar el endpoint
+
+```bash
+# local
+uv run uvicorn app.main:app --reload
+# o con Docker
+docker compose up --build -d
+
+# los 15 presupuestos del sample
+curl -s -X POST http://localhost:8000/embeddings/ingest \
+  -H "Content-Type: application/json" \
+  -d "{\"budgets\": $(cat data/budgets_sample.json)}" | python -m json.tool | head -40
+
+# solo las estadísticas (los vectores son 73 × 1536 floats: mejor no volcarlos a la terminal)
+curl -s -X POST http://localhost:8000/embeddings/ingest \
+  -H "Content-Type: application/json" \
+  -d "{\"budgets\": $(cat data/budgets_sample.json)}" \
+  | python -c "import json,sys; print(json.load(sys.stdin)['stats'])"
+```
+
+También se puede invocar desde Swagger en <http://localhost:8000/docs> (sección **Embeddings**), pegando el
+contenido de `data/budgets_sample.json` dentro de `{"budgets": ...}`.
+
+Respuesta: `chunks` (cada uno con `chunk_id`, `text`, `metadata`, `token_count` y `embedding`) y `stats`:
+
+| Campo | Qué es |
+|---|---|
+| `total_budgets` / `total_chunks` | presupuestos recibidos y chunks producidos |
+| `total_tokens` | tokens de entrada **facturados** por la API (suma de `usage.prompt_tokens`) |
+| `counted_tokens` | tokens contados en local con tiktoken antes de llamar |
+| `estimated_cost_usd` | `total_tokens` × 0,02 USD por millón (precio de `text-embedding-3-small`) |
+| `embedding_model`, `dimensions`, `batches`, `latency_ms` | modelo, dimensión del vector, llamadas a la API y tiempo total |
+
+Códigos: **200** correcto, **422** body inválido (lo gestiona FastAPI con Pydantic), **500** si falta
+`OPENAI_API_KEY` o la API de embeddings falla (mensaje genérico al cliente, detalle en los logs).
+
+### `scripts/compare.py`: similitud entre dos textos
+
+```bash
+# fuera del contenedor (lee .env)
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+
+# dentro del contenedor
+docker compose exec api python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+
+# JSON (para scripts) y logs del embedder en stderr
+uv run python scripts/compare.py --json --verbose --text-a "..." --text-b "..."
+```
+
+```
+Text A: OAuth 2.0 authentication backend for fintech
+Text B: JWT-based authorization service for banking app
+Cosine similarity: 0.6329
+(text-embedding-3-small, 1536 dims, 17 tokens, 0.00000034 USD, 1219 ms; norms 0.9999 / 0.9996)
+```
+
+Los dos textos viajan en **una sola llamada** (el embedder agrupa por lotes también aquí) y el coseno se
+calcula a mano: producto escalar dividido por el producto de las normas, sin numpy ni scikit-learn.
+
+### Decisiones
+
+- **Granularidad: un componente del presupuesto = un chunk.** Es la unidad de razonamiento del dominio:
+  cuando llegue un brief pidiendo un backend de autenticación, lo que queremos recuperar es ese componente,
+  no el presupuesto entero donde una vez se mencionó. Sin overlap y sin trocear descripciones largas: el
+  enunciado pide confiar en la estructura del JSON y llevar los casos raros al directo (ver más abajo).
+- **Cabecera de contexto del presupuesto padre** (proyecto, sector, año, tecnología principal) antes de los
+  datos del componente. Es la versión estática y gratuita de *Contextual Retrieval*: el contexto sale del
+  propio JSON, sin llamar a un LLM. Medido sobre este corpus, **multiplica por nueve el margen** con el que
+  una consulta del sector financiero prefiere el componente correcto frente al de otro sector (+0,1086 con
+  cabecera, +0,0114 sin ella). Está en [`SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
+- **Metadata fuera del texto.** Los campos filtrables (`budget_id`, `component_id`, `client_sector`,
+  `main_technology`, `year`, `complexity`, `estimated_hours`, más el stack y el país) viajan con el chunk pero
+  **no se embeben**: en la sesión 08 serán el `WHERE` de pgvector. El sector va además en el texto porque ahí
+  sí pesa semánticamente; no es redundancia, cada copia cumple un papel distinto.
+- **Lotes de 100 y reintentos.** `embed_many` agrupa (una llamada para los 73 chunks del sample, no 73) y
+  reintenta solo ante `RateLimitError` con esperas de 1 s, 2 s y 4 s; cualquier otro error se propaga. El
+  cliente de OpenAI se crea con `max_retries=0` para que sus reintentos no se sumen a los nuestros.
+- **El precio es una constante etiquetada** (`EMBEDDING_PRICE_USD_PER_MTOK`) porque cambia con el tiempo.
+- **Los embeddings siempre son de OpenAI**, independientemente de `LLM_PROVIDER`: el modelo lo fija el curso.
+  Se usa la dimensión por defecto (1536) sin truncar; Matryoshka queda para el directo.
+
+### Lo que midió la ingesta real (2026-10-16)
+
+| | |
+|---|---|
+| Presupuestos → chunks | 15 → **73** (4 a 6 componentes por presupuesto) |
+| Tokens de entrada | **6.919** facturados, y **6.919** contados en local con tiktoken (coinciden exactamente) |
+| Coste | **0,000138 USD** la ingesta completa |
+| Llamadas a la API | **1 lote** para los 73 chunks, 1,5 s en total |
+| Tokens por chunk | mínimo 77, mediana 94, máximo **207** |
+| Dimensión y norma | 1536; normas entre 0,9997 y 1,0006 (vectores normalizados por el modelo) |
+
+Dos observaciones para el directo:
+
+- **tiktoken predice el gasto al token.** `counted_tokens` y `total_tokens` coincidieron exactamente, así que
+  se puede presupuestar una ingesta antes de lanzarla. Útil cuando el corpus sea de miles de presupuestos.
+- **Hay un chunk que dobla a los demás**: `BUD-2024-030::PLC-001` (adquisición de datos de planta) con 207
+  tokens frente a una mediana de 94. No se trocea, como pide el enunciado, pero es el caso que conviene
+  discutir: una descripción larga diluye el vector y compite peor que una corta y enfocada.
+
+### El sanity check
+
+[`app/embedding_pipeline/SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md) tiene las tres parejas del
+paso 7 con sus valores reales y la lectura. Resumen: la estructura es la esperada (cercanos 0,5957 ≫ no
+relacionados 0,1920), pero la pareja "cercana" **no llega al 0,6** que sugiere el enunciado y dos textos
+genéricos ("Backend services" / "API development") dan 0,5407, casi lo mismo. Los umbrales hay que calibrarlos
+sobre el corpus propio.
+
 ## Interfaz: conversación por turnos (Streamlit)
 
 `streamlit_app.py`, en la raíz del proyecto, es la interfaz del estimador. En la sesión 03 era un chat; en
@@ -1003,6 +1152,17 @@ Checklist del pre-work de la sesión 05:
 - [x] README: camino B de adjuntos y por qué; extracción heurística de `project_metadata` y por qué
 - [x] Tests del paso 7 en verde (`uv run pytest -q`)
 
+Checklist del pre-work de la sesión 07:
+
+- [x] Módulo `app/embedding_pipeline/` con `__init__.py`, `schemas.py`, `chunker.py`, `embedder.py` y `router.py`
+- [x] `JSONStructuralChunker.chunk(budgets)`: un componente = un chunk, con cabecera del presupuesto padre, `chunk_id` = `{budget_id}::{component_id}`, metadata filtrable y `token_count` con tiktoken
+- [x] `OpenAIEmbedder` con `embed_one` y `embed_many`: `text-embedding-3-small` a 1536 dimensiones, lotes de 100, reintentos 1 s/2 s/4 s ante rate limit, logging structlog por lote y coste estimado
+- [x] `POST /embeddings/ingest` registrado bajo `/embeddings`, visible e invocable desde `/docs` (200 / 422 / 500)
+- [x] `scripts/compare.py` funcional dentro y fuera del contenedor, con el coseno calculado a mano
+- [x] `app/embedding_pipeline/SANITY_CHECK.md` con los tres valores y el comentario
+- [x] README con las instrucciones de ejecución; `pyproject.toml` con `tiktoken` añadido
+- [x] Extra (no exigido): 16 tests del pipeline sin gastar créditos (`tests/test_embedding_pipeline.py`)
+
 ## Decisiones de diseño
 
 - **Dos proveedores**, seleccionables con `LLM_PROVIDER`. Ambos usan los modelos económicos que indica el
@@ -1059,6 +1219,12 @@ Checklist del pre-work de la sesión 06:
 
 ## Próximos pasos (sesión en vivo)
 
+- Sesión 07 (directo): otras estrategias de chunking sobre este mismo pipeline (recursive, semantic,
+  hierarchical, late chunking, Contextual Retrieval con LLM) y comparación con la estructural; comparativa
+  entre modelos de embeddings y Matryoshka (dimensión reducida). Preguntas que deja el sanity check: cómo
+  calibrar el umbral cuando el suelo del corpus está en 0,43, si conviene top-k en lugar de umbral absoluto, y
+  qué hacer con los componentes de descripción anormalmente larga. Sesión 08: persistir los vectores en
+  PostgreSQL + pgvector y filtrar por la metadata del chunk.
 - Sesión 06 (directo): RAG sobre el baseline de `evals/stress/REPORT.md`. Pendiente del directo de la 05: el
   patrón Actor-Critic-Boss (`evals/run.py --mode acb`), persistir las sesiones (Redis/Postgres) cuando haya más
   de un worker, streaming del turno con SSE y extractor LLM de `project_metadata` si la heurística se queda corta.

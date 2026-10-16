@@ -76,6 +76,23 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/sessions/$SID)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/api/v1/sessions/$SID/estimate -F transcript=corta)" = "422"
 
+      - name: Comprobar el pipeline de embeddings (sesión 07)
+        run: |
+          curl -sf http://127.0.0.1:8000/openapi.json | grep -q '"/embeddings/ingest"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/embeddings/ingest -H 'Content-Type: application/json' -d '{}')" = "422"
+          curl -sf http://127.0.0.1:8000/health | grep -q '"embedding_model":"text-embedding-3-small"'
+          # El tokenizador de tiktoken está en la imagen: contar tokens no necesita red ni API key.
+          docker compose exec -T api python -c "
+import json, sys
+sys.path.insert(0, '/app')
+from app.embedding_pipeline.chunker import JSONStructuralChunker
+from app.embedding_pipeline.schemas import Budget
+budgets = [Budget.model_validate(b) for b in json.load(open('/app/data/budgets_sample.json'))]
+chunks = JSONStructuralChunker().chunk(budgets)
+assert len(chunks) == 73, len(chunks)
+print(f'{len(budgets)} presupuestos -> {len(chunks)} chunks')
+"
+
       - name: Comprobar el formulario (Streamlit)
         run: |
           for _ in $(seq 1 60); do

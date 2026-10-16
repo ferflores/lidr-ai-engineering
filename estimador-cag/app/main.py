@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from app.config import Settings, get_settings
+from app.embedding_pipeline.router import router as embeddings_router
 from app.routers import estimations, sessions
 from app.services.observability import configure_logging
 from app.services.sessions import get_session_store
@@ -42,6 +43,11 @@ Las sesiones viven en memoria del proceso.
 **resumen acumulativo**, los hechos del cliente se conservan como **anclas**, cada turno resuelve un **tier** y pasa
 por una **caché** (exacta y semántica), y todo se agrega en un único evento `turn_observed` que
 `GET /api/v1/sessions/{session_id}` expone como `last_turn_observed`.
+
+**Embeddings** (pre-work sesión 07): `POST /embeddings/ingest` recibe presupuestos históricos en JSON, los parte
+con un **chunker estructural** (un componente = un chunk, con cabecera de contexto del presupuesto padre) y los
+vectoriza con `text-embedding-3-small` por lotes. Devuelve los chunks con su vector y las estadísticas (tokens,
+coste); todavía no se persisten (PostgreSQL + pgvector llega en la sesión 08).
 """
 
 settings = get_settings()
@@ -53,12 +59,14 @@ app = FastAPI(
     openapi_tags=[
         {"name": "Estimaciones", "description": "Generación de estimaciones de software con un LLM (una petición, una estimación)."},
         {"name": "Sesiones", "description": "Conversaciones multi-turno con memoria del proyecto y adjuntos."},
+        {"name": "Embeddings", "description": "Chunking estructural de presupuestos JSON y generación de embeddings (sin persistencia todavía)."},
         {"name": "Sistema", "description": "Estado y diagnóstico del servicio."},
     ],
 )
 
 app.include_router(estimations.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(embeddings_router, prefix="/embeddings")  # POST /embeddings/ingest (ruta fijada por el enunciado de la sesión 07)
 
 
 class HealthResponse(BaseModel):
@@ -71,6 +79,8 @@ class HealthResponse(BaseModel):
     prompt_template: str
     session_max_turns: int
     active_sessions: int
+    embedding_model: str
+    embeddings_configured: bool
     timestamp: datetime
 
 
@@ -87,5 +97,7 @@ async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         prompt_template=f"estimacion/{settings.prompt_version}",
         session_max_turns=settings.session_max_turns,
         active_sessions=len(get_session_store()),
+        embedding_model=settings.embedding_model,
+        embeddings_configured=bool((settings.openai_api_key or "").strip()),
         timestamp=datetime.now(timezone.utc),
     )

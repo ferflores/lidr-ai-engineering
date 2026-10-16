@@ -43,6 +43,9 @@ REQUIRED=(
   evals/stress/scenarios.py evals/stress/metrics.py evals/stress/run.py evals/stress/report.py evals/stress/fixtures/build_pdfs.py
   evals/stress/REPORT.md evals/stress/results.csv
   tests/test_stress_metrics.py
+  app/embedding_pipeline/__init__.py app/embedding_pipeline/schemas.py app/embedding_pipeline/chunker.py
+  app/embedding_pipeline/embedder.py app/embedding_pipeline/router.py app/embedding_pipeline/similarity.py
+  app/embedding_pipeline/SANITY_CHECK.md scripts/compare.py data/budgets_sample.json
   .env.example .gitignore pyproject.toml README.md
   streamlit_app.py
 )
@@ -108,6 +111,30 @@ ATT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/sess
 STATE=$(curl -s "$BASE_URL/api/v1/sessions/$SESSION_ID")
 echo "$STATE" | grep -q '"last_turn_observed"' && echo "$STATE" | grep -q '"anchors_count"' && ok "GET /api/v1/sessions/{id} expone anchors_count, summary_chars y last_turn_observed" || fail "GET /api/v1/sessions/{id} sin los campos de observación: $STATE"
 
+# Pipeline de embeddings (sesión 07): el endpoint está publicado y valida el body sin gastar créditos
+curl -sf "$BASE_URL/openapi.json" | grep -q '"/embeddings/ingest"' && ok "POST /embeddings/ingest está en el OpenAPI" || fail "POST /embeddings/ingest no está en el OpenAPI"
+EMB_EMPTY=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" -d '{}')
+[ "$EMB_EMPTY" = "422" ] && ok "POST /embeddings/ingest valida el body (422 sin presupuestos)" || fail "body vacío en /embeddings/ingest devolvió $EMB_EMPTY"
+EMB_BAD=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" -d '{"budgets":[{"budget_id":"X-1","client_metadata":{"name":"n","sector":"banking","country":"ES"},"project_summary":"s","main_technology":"t","year":2024,"total_estimated_hours":1,"components":[{"component_id":"C-1","name":"n","description":"d","tech_stack":[],"estimated_hours":1,"complexity":"high","dependencies":[]}]}]}')
+[ "$EMB_BAD" = "422" ] && ok "POST /embeddings/ingest rechaza un sector fuera del vocabulario (422)" || fail "sector inválido en /embeddings/ingest devolvió $EMB_BAD"
+# El chunker funciona sin tocar la API de embeddings: 15 presupuestos del sample -> 73 chunks trazables
+if uv run python -c "
+import json
+from app.embedding_pipeline.chunker import JSONStructuralChunker
+from app.embedding_pipeline.schemas import Budget
+budgets = [Budget.model_validate(b) for b in json.load(open('data/budgets_sample.json'))]
+chunks = JSONStructuralChunker().chunk(budgets)
+assert len(budgets) == 15, len(budgets)
+assert len(chunks) == sum(len(b.components) for b in budgets) == 73, len(chunks)
+assert chunks[0].chunk_id == 'BUD-2024-014::AUTH-001'
+assert chunks[0].text.startswith('[Project: ') and chunks[0].token_count > 0
+assert chunks[0].metadata['client_sector'] == 'finance'
+" >/dev/null 2>&1; then
+  ok "el chunker produce 73 chunks trazables de los 15 presupuestos del sample"
+else
+  fail "el chunker no produce los chunks esperados sobre data/budgets_sample.json"
+fi
+
 # Evals y stress (sesión 06) con el LLM simulado: el runner funciona de punta a punta sin API key
 # (evals/run.py devuelve 1 si algún caso falla una métrica, y con el doble el recall falla siempre: aquí solo se comprueba que corre)
 EVALS_OUT=$(uv run python -m evals.run --fake --cases landing-hubspot 2>/dev/null || true)
@@ -153,6 +180,33 @@ PY
   else
     fail "el endpoint no devolvió una estimación: $RESPUESTA"
   fi
+  echo "  -- ingesta real de embeddings (15 presupuestos del sample) --"
+  # La respuesta lleva 73 vectores de 1536 floats (~2 MB): va a un fichero temporal, no a una variable
+  # de entorno ni a la línea de comandos (el límite de argumentos del sistema no lo admite).
+  EMB_FILE=$(mktemp)
+  curl -sf -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" \
+    -d "{\"budgets\": $(cat data/budgets_sample.json)}" -o "$EMB_FILE" || true
+  if grep -q '"estimated_cost_usd"' "$EMB_FILE" 2>/dev/null; then
+    ok "POST /embeddings/ingest devolvió los chunks vectorizados"
+    EMB_FILE="$EMB_FILE" uv run python - <<'PY'
+import json, math, os
+data = json.load(open(os.environ["EMB_FILE"]))
+stats, chunks = data["stats"], data["chunks"]
+print(f"     {stats['total_budgets']} presupuestos -> {stats['total_chunks']} chunks · {stats['dimensions']} dims · "
+      f"{stats['total_tokens']} tokens ({stats['counted_tokens']} contados con tiktoken) · "
+      f"{stats['estimated_cost_usd']:.6f} USD · {stats['batches']} lote(s) · {stats['latency_ms']} ms")
+tokens = sorted(c["token_count"] for c in chunks)
+largest = max(chunks, key=lambda c: c["token_count"])
+norm = math.sqrt(sum(x * x for x in chunks[0]["embedding"]))
+print(f"     tokens por chunk: min={tokens[0]} p50={tokens[len(tokens)//2]} max={tokens[-1]} ({largest['chunk_id']}) · "
+      f"norma del primer vector: {norm:.4f}")
+assert len(chunks[0]["embedding"]) == stats["dimensions"] == 1536
+assert chunks[0]["chunk_id"] == "BUD-2024-014::AUTH-001"
+PY
+  else
+    fail "la ingesta de embeddings no funcionó (respuesta en $EMB_FILE)"
+  fi
+  rm -f "$EMB_FILE"
   if [ "${SKIP_SESSION_LLM:-0}" = "1" ]; then
     echo "  ⏭  conversación omitida (SKIP_SESSION_LLM=1)"
   else

@@ -110,6 +110,12 @@ class Settings(BaseSettings):
         description="Caracteres de texto extraído que se conservan por adjunto; el resto se recorta (y se avisa).",
     )
 
+    # --- Embeddings (pre-work sesión 07) ---------------------------------------------------------
+    # El pipeline de embeddings usa siempre OpenAI (OPENAI_API_KEY), sea cual sea LLM_PROVIDER. El modelo está
+    # fijado por el curso; la dimensión es la del modelo (1536) y no se reduce (Matryoshka queda para el directo).
+    embedding_model: str = Field(default="text-embedding-3-small", description="Modelo de embeddings de OpenAI.")
+    embedding_batch_size: int = Field(default=100, ge=1, le=2048, description="Chunks por llamada a la API de embeddings.")
+
     # --- Parámetros del modelo ---------------------------------------------
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     llm_max_tokens: int = Field(default=4096, gt=0)

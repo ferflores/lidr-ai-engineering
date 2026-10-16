@@ -7,7 +7,8 @@ FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    TIKTOKEN_CACHE_DIR=/app/.tiktoken
 
 WORKDIR /app
 
@@ -16,7 +17,12 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-# 2) El código: API (app/), plantillas de prompt (prompts/), interfaz (streamlit_app.py + .streamlit/config.toml)
+# 1b) El tokenizador que usa el chunker de embeddings (tiktoken, cl100k_base) se descarga en el build y queda
+#     en la imagen: el contenedor no necesita red para contar tokens ni falla si la descarga no está disponible.
+RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.encoding_for_model('text-embedding-3-small')"
+
+# 2) El código: API (app/), plantillas de prompt (prompts/), interfaz (streamlit_app.py + .streamlit/config.toml),
+#    scripts/ y data/ (pre-work sesión 07)
 #    y las transcripciones y adjuntos de ejemplo que carga la interfaz.
 #    El .env NO se copia (ver .dockerignore): llega como variables de entorno por docker compose.
 COPY app ./app
@@ -24,6 +30,9 @@ COPY prompts ./prompts
 COPY streamlit_app.py ./
 COPY .streamlit/config.toml ./.streamlit/config.toml
 COPY transcripciones ./transcripciones
+# Pre-work sesión 07: scripts/compare.py se ejecuta con `docker compose exec api ...` y data/ trae el sample de presupuestos.
+COPY scripts ./scripts
+COPY data ./data
 
 # Usuario sin privilegios
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app
