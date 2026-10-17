@@ -63,6 +63,7 @@ def test_swagger_y_openapi_disponibles(client):
     assert set(schema["properties"]) == {
         "transcription", "project_name", "project_type", "hourly_rate_eur",
         "deadline_weeks", "estimation_mode", "detail_level", "prompt_version",
+        "response_format",  # markdown | structured | both (sesión 04: salida estructurada)
     }
     assert schema["required"] == ["transcription"]
     assert schema["additionalProperties"] is False

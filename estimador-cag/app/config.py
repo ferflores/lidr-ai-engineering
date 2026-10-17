@@ -95,7 +95,27 @@ class Settings(BaseSettings):
     response_cache_enabled: bool = Field(default=True)
     response_cache_max_entries: int = Field(default=256, ge=1)
     response_cache_ttl_seconds: float = Field(default=3600.0, gt=0)
-    semantic_cache_threshold: float = Field(default=0.9, ge=0.0, le=1.0, description="Similitud (Jaccard sobre palabras) mínima para un acierto semántico; 1.0 lo desactiva en la práctica.")
+    semantic_cache_threshold: float = Field(
+        default=0.9, ge=0.0, le=1.0,
+        description="Similitud mínima para un acierto semántico con el backend `jaccard`; 1.0 lo desactiva.",
+    )
+    # Cómo se mide el parecido entre peticiones (sesión 04, bloque de cacheo semántico):
+    # `jaccard` compara palabras (determinista, gratis); `embeddings` compara significados (una llamada
+    # a la API de embeddings por consulta).
+    semantic_cache_backend: Literal["jaccard", "embeddings"] = Field(default="jaccard")
+    # Umbral del backend de embeddings. NO es el mismo número que el de Jaccard y no se puede copiar del
+    # material: el curso recomienda 0,90-0,93, pero medido sobre peticiones reales de este dominio
+    # (docs/calibracion-cache-semantica.md) ese umbral solo reconoce 1 de cada 5 reformulaciones.
+    # 0,75 acierta 4 de 5 sin ningún falso positivo en la muestra.
+    semantic_cache_threshold_embeddings: float = Field(default=0.75, ge=0.0, le=1.0)
+
+    @property
+    def effective_semantic_threshold(self) -> float:
+        """El umbral que toca según el backend. Existe porque el mismo número significa cosas distintas:
+        0,9 en Jaccard es "casi las mismas palabras"; 0,9 en coseno es "casi el mismo vector"."""
+        if self.semantic_cache_backend == "embeddings":
+            return self.semantic_cache_threshold_embeddings
+        return self.semantic_cache_threshold
 
     # --- Observabilidad ------------------------------------------------------------------------
     log_format: Literal["json", "console"] = Field(default="json", description="Formato de los eventos structlog (turn_observed...).")
@@ -108,6 +128,24 @@ class Settings(BaseSettings):
         default=60_000,
         gt=0,
         description="Caracteres de texto extraído que se conservan por adjunto; el resto se recorta (y se avisa).",
+    )
+
+    # --- Wrapper de proveedores (sesión 03) ------------------------------------------------------
+    # `sdk` usa los SDK oficiales de cada proveedor (el camino con el que se hicieron las entregas);
+    # `litellm` usa el agregador que recomienda el curso, con la convención de OpenAI para todos.
+    llm_backend: Literal["sdk", "litellm"] = Field(default="sdk")
+    litellm_retries: int = Field(default=2, ge=0, le=5, description="Reintentos que gestiona LiteLLM.")
+
+    # --- Guardrails (sesión 04, bloque "Guardrails y validación de outputs") ----------------------
+    # `log` evalúa y registra sin bloquear (el modo con el que manda el material desplegar: una o dos
+    # semanas mirando falsos positivos antes de activar el bloqueo), `enforce` bloquea, `off` los apaga.
+    guardrails_mode: Literal["log", "enforce", "off"] = Field(
+        default="log",
+        description="Cómo actúan los guardrails: log (solo registra), enforce (bloquea) u off.",
+    )
+    guardrails_moderation: bool = Field(
+        default=True,
+        description="Llamar a la API de moderación de OpenAI en la entrada (gratuita, 50-100 ms).",
     )
 
     # --- Embeddings (pre-work sesión 07) ---------------------------------------------------------

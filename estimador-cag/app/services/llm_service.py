@@ -283,7 +283,15 @@ async def call_llm(
 
     `model` y `max_tokens` permiten que el tier dinámico (app/services/tiering.py) elija otro modelo o
     otro presupuesto de salida para un turno concreto; por defecto, los de la configuración.
+
+    Con `LLM_BACKEND=litellm` la llamada va por el agregador (app/services/litellm_backend.py) en vez de
+    por el SDK del proveedor. El resto del sistema no se entera: misma entrada, misma salida.
     """
+    if settings.llm_backend == "litellm":
+        from app.services.litellm_backend import call_litellm
+
+        return await call_litellm(prompt, settings, api_key, model, max_tokens)
+
     if settings.llm_provider == "openai":
         return await _call_openai(prompt, settings, api_key, model or settings.openai_model, max_tokens or settings.llm_max_tokens)
     return await _call_anthropic(prompt, settings, api_key, model or settings.anthropic_model, max_tokens or settings.llm_max_tokens)

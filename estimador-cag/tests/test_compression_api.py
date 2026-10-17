@@ -138,7 +138,10 @@ async def test_el_mismo_prompt_acierta_en_la_cache_exacta_y_uno_casi_igual_en_la
     assert repetido["usage"]["cost"]["total_usd"] == 0 and repetido["turn_observed"]["cost_usd"] == 0
     assert casi_igual["cache_hit_kind"] == "semantic" and casi_igual["estimation"] == primero["estimation"]
     assert len(llm.calls) == 1  # una sola llamada real para las tres sesiones
-    assert cache.stats() == {"entries": 1, "exact_hits": 1, "semantic_hits": 1, "misses": 1}
+    assert cache.stats() == {
+        "entries": 1, "exact_hits": 1, "semantic_hits": 1, "misses": 1,
+        "semantic_backend": "jaccard", "embedding_calls": 0, "embedding_errors": 0,
+    }
     # La memoria se actualiza igual con una respuesta cacheada
     assert repetido["project_metadata"]["project_name"] == "Nimbus"
 

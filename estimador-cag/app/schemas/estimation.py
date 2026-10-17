@@ -17,6 +17,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 ProjectType = Literal["web", "movil", "api", "datos", "otro"]
 EstimationMode = Literal["conservadora", "equilibrada", "optimista"]
 DetailLevel = Literal["completa", "resumen"]
+# Cómo se quiere la estimación de vuelta (sesión 04, bloque de extracción de datos estructurados).
+# `markdown` es el comportamiento histórico; `structured` devuelve el objeto tipado; `both` devuelve los dos,
+# y el Markdown se renderiza desde el objeto, no desde otra llamada al modelo.
+ResponseFormat = Literal["markdown", "structured", "both"]
 
 PROJECT_TYPE_LABELS: dict[str, str] = {
     "web": "Aplicación web",
@@ -93,6 +97,14 @@ class EstimationRequest(BaseModel):
         description="Versión de la plantilla de prompt (`prompts/estimacion/<versión>`). Por defecto, PROMPT_VERSION.",
         examples=["v2"],
     )
+    response_format: ResponseFormat = Field(
+        default="markdown",
+        description=(
+            "Qué devolver: `markdown` (texto, comportamiento histórico), `structured` (objeto tipado y validado) "
+            "o `both`. En los dos últimos el modelo responde con JSON contra un esquema y la respuesta se valida "
+            "antes de salir del servicio."
+        ),
+    )
 
     @field_validator("transcription", "project_name", mode="before")
     @classmethod
@@ -105,5 +117,10 @@ class EstimationRequest(BaseModel):
         return value or None
 
     def prompt_variables(self) -> dict[str, object]:
-        """Variables que reciben las plantillas: todos los parámetros menos la versión, que elige la plantilla."""
-        return self.model_dump(exclude={"prompt_version"})
+        """Variables que reciben las plantillas: los parámetros de la estimación.
+
+        Se excluyen la versión de plantilla (la elige la plantilla) y el formato de respuesta (no cambia el
+        contenido de la estimación, solo cómo vuelve), para que el prompt renderizado siga siendo idéntico
+        entre formatos y la caché del proveedor no se invalide por pedir JSON en vez de Markdown.
+        """
+        return self.model_dump(exclude={"prompt_version", "response_format"})

@@ -42,6 +42,7 @@ from app.services.metadata_extractor import extract_project_metadata
 from app.services.observability import TurnObservation, emit_turn_observed
 from app.services.prompts import get_template
 from app.services.response_cache import NONE, ResponseCache, get_response_cache
+from app.services.semantic_cache_backend import make_cache_embedder
 from app.services.sessions import Anchor, ProjectMetadata, Session
 from app.services.summarizer import SummaryUpdate, fold_into_summary
 from app.services.tiering import TierContext, TierDecision, resolve_tier
@@ -83,9 +84,10 @@ async def run_turn(
     settings = settings or get_settings()
     if cache is None and settings.response_cache_enabled:
         cache = get_response_cache()
-        cache.semantic_threshold = settings.semantic_cache_threshold
+        cache.semantic_threshold = settings.effective_semantic_threshold
         cache.max_entries = settings.response_cache_max_entries
         cache.ttl_seconds = settings.response_cache_ttl_seconds
+        cache.embed = make_cache_embedder(settings)
     attachments = tuple(attachments)
     attachments_chars = sum(a.chars for a in attachments)
     turn_started = time.perf_counter()

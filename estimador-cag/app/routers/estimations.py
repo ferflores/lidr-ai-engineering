@@ -9,8 +9,11 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.schemas.estimation import EstimationRequest
-from app.services.llm_service import LLMConfigurationError, LLMProviderError, generate_estimation
+from app.schemas.structured import StructuredEstimation
+from app.services.llm_service import LLMConfigurationError, LLMProviderError, cost_for, generate_estimation
+from app.services.guardrails import GuardrailReport, check_input, check_structured_output
 from app.services.prompts import PromptTemplateError, PromptTemplateNotFound, list_versions, load_template
+from app.services.structured_output import generate_structured_estimation
 
 router = APIRouter(tags=["Estimaciones"])
 
@@ -47,12 +50,46 @@ class PromptResponse(BaseModel):
     transcription_chars: int = Field(description="Tamaño de la transcripción enviada.")
 
 
+class GuardrailsResponse(BaseModel):
+    """Qué guardrails saltaron. Presente solo cuando hubo algo que contar."""
+
+    mode: str = Field(description="`log` (solo registra) o `enforce` (bloquea).")
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Avisos que no impiden devolver la estimación, pero que conviene mirar.",
+    )
+    rules: list[str] = Field(default_factory=list, description="Identificadores de las reglas que saltaron.")
+
+
+class StructuredInfo(BaseModel):
+    """Cómo se consiguió el objeto tipado. `attempts` > 1 significa que hubo que pedirle una corrección al modelo."""
+
+    attempts: int = Field(description="Llamadas al modelo hasta obtener un objeto válido (1 si validó a la primera).")
+    repaired: list[str] = Field(
+        default_factory=list,
+        description="Errores de validación que se devolvieron al modelo para que los corrigiera, en orden.",
+    )
+
+
 class EstimationResponse(BaseModel):
-    estimation: str = Field(description="Estimación generada por el LLM, en Markdown.")
+    estimation: str = Field(description="Estimación en Markdown. En modo `structured` viene vacía.")
+    structured: StructuredEstimation | None = Field(
+        default=None,
+        description=(
+            "La estimación como objeto tipado y validado (horas, coste, equipo, supuestos, riesgos). "
+            "Solo con `response_format` igual a `structured` o `both`."
+        ),
+    )
+    structured_info: StructuredInfo | None = Field(
+        default=None, description="Diagnóstico de la generación estructurada."
+    )
     model: str = Field(description="Modelo utilizado.", examples=["gpt-4o-mini"])
     provider: str = Field(description="Proveedor del LLM.", examples=["openai"])
     usage: TokenUsageResponse | None = Field(default=None, description="Tokens consumidos y coste de la llamada.")
     prompt: PromptResponse | None = Field(default=None, description="Plantilla usada y tamaño del prompt enviado.")
+    guardrails: GuardrailsResponse | None = Field(
+        default=None, description="Avisos de los guardrails, si alguno saltó."
+    )
     generated_at: datetime = Field(description="Momento de generación (UTC).")
 
 
@@ -94,6 +131,11 @@ async def create_estimation(
     payload: EstimationRequest,
     settings: Settings = Depends(get_settings),
 ) -> EstimationResponse:
+    entrada = await _guard_input(payload, settings)
+
+    if payload.response_format in ("structured", "both"):
+        return await _structured_estimation(payload, settings, entrada)
+
     try:
         result = await generate_estimation(payload, settings)
     except PromptTemplateNotFound as exc:
@@ -135,6 +177,72 @@ async def create_estimation(
         provider=result.provider,
         usage=usage,
         prompt=prompt,
+        guardrails=_guardrails_response(settings, entrada),
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+async def _guard_input(payload: EstimationRequest, settings: Settings) -> GuardrailReport:
+    """Guardrails de entrada. Van antes del modelo **y antes de la caché**: servir un acierto de caché
+    saltándose la validación convertiría la caché en un vector de inyección (regla de la sesión 04)."""
+    report = await check_input(payload.transcription, settings)
+    if report.blocked:
+        raise HTTPException(status_code=400, detail=report.reason())
+    return report
+
+
+def _guardrails_response(settings: Settings, *reports: GuardrailReport) -> GuardrailsResponse | None:
+    hallazgos = [f for r in reports for f in r.findings]
+    if not hallazgos:
+        return None
+    return GuardrailsResponse(
+        mode=settings.guardrails_mode,
+        warnings=[f.detail for f in hallazgos],
+        rules=[f.rule for f in hallazgos],
+    )
+
+
+async def _structured_estimation(
+    payload: EstimationRequest, settings: Settings, entrada: GuardrailReport
+) -> EstimationResponse:
+    """Vía estructurada: el modelo responde contra un esquema y el objeto se valida antes de salir del servicio.
+
+    El Markdown, cuando se pide, se renderiza **desde el objeto**: una sola llamada al modelo para los dos
+    formatos, y la garantía de que el texto y los datos no pueden contradecirse.
+    """
+    try:
+        result = await generate_structured_estimation(payload, settings)
+    except PromptTemplateNotFound as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (LLMConfigurationError, PromptTemplateError) as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    except LLMProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    usage = None
+    if result.usage is not None:
+        cost = cost_for(result.usage, settings, result.model)
+        usage = TokenUsageResponse(
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+            total_tokens=result.usage.total_tokens,
+            cost=None if cost is None else CostResponse(
+                input_usd=cost.input_usd,
+                output_usd=cost.output_usd,
+                total_usd=cost.total_usd,
+                input_price_per_mtok=cost.pricing.input_per_mtok,
+                output_price_per_mtok=cost.pricing.output_per_mtok,
+            ),
+        )
+    salida = check_structured_output(result.estimation, settings=settings)
+    return EstimationResponse(
+        estimation=result.estimation.to_markdown() if payload.response_format == "both" else "",
+        structured=result.estimation,
+        structured_info=StructuredInfo(attempts=result.attempts, repaired=list(result.repair_errors)),
+        model=result.model,
+        provider=result.provider,
+        usage=usage,
+        guardrails=_guardrails_response(settings, entrada, salida),
         generated_at=datetime.now(timezone.utc),
     )
 

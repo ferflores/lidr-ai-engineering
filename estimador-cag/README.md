@@ -1,4 +1,4 @@
-# Estimador CAG — Proyecto 1 (Sesiones 02, 03, 04, 05 y pre-work 06 y 07)
+# Estimador CAG — Proyecto 1 (Sesiones 02 a 07)
 
 Servicio **FastAPI** que recibe la transcripción de una reunión con un cliente más unos **parámetros
 tipados** (tarifa, tipo de proyecto, plazo, enfoque, nivel de detalle) y devuelve una **estimación de
@@ -25,6 +25,11 @@ Desde el pre-work de la **sesión 07** hay un primer paso hacia la búsqueda sem
 (`POST /embeddings/ingest`), con un chunker estructural (un componente = un chunk) y
 `text-embedding-3-small`. Los vectores se devuelven por HTTP, todavía **sin persistir**.
 Ver [Pipeline de embeddings](#pipeline-de-embeddings-pre-work-sesión-07).
+
+Además, cuatro piezas que el curso enseñó y el proyecto no tenía (ver
+[Huecos del curso, cerrados](#huecos-del-curso-cerrados)): **salida estructurada** validada con Pydantic,
+**guardrails** de entrada y salida, **caché semántica por embeddings** y el wrapper de proveedores con
+**LiteLLM** como backend opcional.
 
 Arquitectura **CAG**: todo el contexto que necesita el modelo (estimaciones de ejemplo) viaja íntegro
 dentro del prompt en cada llamada. No hay base de datos ni retrieval; el único estado es el de las
@@ -863,6 +868,88 @@ paso 7 con sus valores reales y la lectura. Resumen: la estructura es la esperad
 relacionados 0,1920), pero la pareja "cercana" **no llega al 0,6** que sugiere el enunciado y dos textos
 genéricos ("Backend services" / "API development") dan 0,5407, casi lo mismo. Los umbrales hay que calibrarlos
 sobre el corpus propio.
+
+## Huecos del curso, cerrados
+
+Cuatro cosas que el material enseña y que el proyecto no tenía. Todas son **aditivas**: el comportamiento
+por defecto no cambia, para no invalidar las entregas ni el baseline del stress.
+
+### 1. Salida estructurada (sesión 04)
+
+*Un producto no consume texto, consume datos.* El endpoint devolvía Markdown en un campo de texto y quien
+lo quisiera usar tenía que parsearlo.
+
+```bash
+curl -X POST localhost:8000/api/v1/estimate -H "Content-Type: application/json" -d '{
+  "transcription": "...", "hourly_rate_eur": 55, "response_format": "structured"}'
+```
+
+`response_format` acepta `markdown` (por defecto, comportamiento histórico), `structured` (objeto tipado) o
+`both`. En los dos últimos el modelo responde contra un **JSON Schema** y el objeto se valida antes de salir
+del servicio: `app/schemas/structured.py` define horas, coste, equipo, supuestos, riesgos y preguntas.
+
+Lo que de verdad cambia el resultado no es el esquema, es la **validación de coherencia**: los validadores
+comprueban que las líneas sumen el subtotal, que la contingencia cuadre y que el coste sea horas × tarifa.
+Cuando algo de eso falla, el error vuelve al modelo como un mensaje más y se le pide que lo corrija, hasta
+tres intentos. La respuesta dice en `structured_info` cuántos intentos hicieron falta y qué se corrigió.
+
+> **Por qué no Instructor**, que es lo que recomienda el material: su última versión fija `jiter<0.15` y el
+> SDK de OpenAI del proyecto exige `jiter>=0.16`, así que no hay resolución posible. Se implementa a mano lo
+> que Instructor hace por dentro, con las vías nativas de cada proveedor: `chat.completions.parse` en OpenAI
+> y `output_config.format` en Anthropic.
+
+### 2. Guardrails de entrada y salida (sesión 04)
+
+La forma no garantiza el contenido. `app/services/guardrails.py` cubre la mitad semántica de la matriz del
+material (la sintáctica ya la cubrían `EstimationRequest` y `StructuredEstimation`):
+
+| | Entrada | Salida |
+|---|---|---|
+| Qué mira | moderación de OpenAI, patrones de inyección de prompt, PII evidente | fuera de dominio, cifras implausibles, desglose pobre, confianza baja sin preguntas |
+| Política | `BLOCK` la inyección y la moderación; `DEGRADE` la PII | `DEGRADE` todo: el usuario ya pagó la llamada |
+
+Cada regla **declara su política**, que es la regla que el material pide no dejar implícita. Y el modo por
+defecto es `log`: evalúa, registra el evento `guardrail_triggered` y **no bloquea nada**. Es el despliegue
+que recomienda el curso, una o dos semanas mirando falsos positivos antes de poner `GUARDRAILS_MODE=enforce`.
+
+Los guardrails de entrada corren **antes de la caché**: servir un acierto de caché saltándose la validación
+convertiría la caché en un vector de inyección.
+
+### 3. Caché semántica por embeddings (sesión 04)
+
+`SEMANTIC_CACHE_BACKEND=embeddings` cambia la comparación de Jaccard sobre palabras a coseno sobre
+embeddings, que es lo que reconoce *significados* y no solo vocabulario compartido.
+
+El umbral **no se puede copiar del material**. Medido sobre peticiones reales de este dominio
+([`docs/calibracion-cache-semantica.md`](docs/calibracion-cache-semantica.md)), el 0,90-0,93 que recomienda
+el curso solo reconoce 1 de cada 5 reformulaciones:
+
+| Umbral | Reformulaciones que acierta | Peticiones distintas que serviría mal |
+|---|---|---|
+| 0,90 (el del material) | 1 de 5 | 0 de 5 |
+| **0,75 (el que se ha fijado)** | **4 de 5** | **0 de 5** |
+| 0,55 | 5 de 5 | 1 de 5 |
+
+Y las dos clases **se solapan**: la peor reformulación equivalente da 0,594 y la peor pareja distinta 0,627,
+así que ningún umbral las separa del todo. Mismo hallazgo que el sanity check de la sesión 07.
+
+### 4. LiteLLM como wrapper de proveedores (sesión 03)
+
+`LLM_BACKEND=litellm` enruta las llamadas por el agregador en vez de por los SDK directos. *Lo que un ORM
+hace con las bases de datos, LiteLLM lo hace con los LLMs*: el system prompt pasa a ser un mensaje más y la
+respuesta se lee igual venga de donde venga.
+
+Se deja como **backend opcional** y no como sustitución: los SDK directos son los que usaron las entregas de
+las sesiones 02 a 07, y cambiarlos invalidaría la comparación con el baseline del stress. Comprobado que los
+dos caminos dan el mismo resultado sobre el mismo prompt (3.314 tokens de entrada y la misma estimación).
+
+> El material avisa de que las versiones 1.82.7 y 1.82.8 de LiteLLM en PyPI estuvieron comprometidas en
+> marzo de 2026. La dependencia se fija por encima de esas dos y `uv.lock` deja la versión exacta.
+
+### Lo que no se ha tocado
+
+El streaming del formulario sigue en los SDK; el modo `markdown`, la ventana deslizante, las anclas, el
+resumen y el tier funcionan exactamente igual que en las entregas. 222 tests en verde.
 
 ## Interfaz: conversación por turnos (Streamlit)
 
