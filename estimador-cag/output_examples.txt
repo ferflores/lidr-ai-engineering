@@ -1,0 +1,121 @@
+Búsqueda semántica sobre los presupuestos históricos (PostgreSQL + pgvector, distancia coseno)
+API: http://api:8000  ·  k=5  ·  sin índice vectorial (sequential scan)
+La distancia coseno va de 0 (idéntico) a 2 (opuesto); para embeddings de texto, menos es más cercano.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[1/5] Componente directo conocido
+  Query:     "REST API development with JWT authentication for financial sector"
+  k=5  ·  5 resultado(s)  ·  354 ms (embedding de la consulta + SQL)
+  Qué observar: Sanity check: el corpus tiene un 'OAuth 2.0 authentication backend' de un proyecto de banca. Debería salir arriba y con la menor distancia de las cinco consultas.
+
+  Cada resultado: chunk_id · distancia coseno · chunk_type · componente (sector, año, horas, complejidad),
+  y debajo los primeros 120 caracteres del content tal cual se embebió.
+
+   1. #1     d=0.4109  budget_component  ·  OAuth 2.0 authentication backend  (finance, 2024, 120 h, high)
+      [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | …
+   2. #3     d=0.4582  budget_component  ·  Accounts and transactions API  (finance, 2024, 90 h, medium)
+      [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | …
+   3. #5     d=0.4768  budget_component  ·  Observability and audit log  (finance, 2024, 70 h, medium)
+      [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | …
+   4. #11    d=0.4829  budget_component  ·  Card tokenisation vault  (finance, 2025, 150 h, high)
+      [Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard] [Client sector: finance | Year: 20…
+   5. #2     d=0.4879  budget_component  ·  PSD2 open banking connectors  (finance, 2024, 140 h, high)
+      [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | …
+
+  rango de distancias: 0.4109 … 0.4879  (margen 0.0770)
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[2/5] Reformulación semántica
+  Query:     "secure backend service with token-based access control for banking applications"
+  k=5  ·  5 resultado(s)  ·  214 ms (embedding de la consulta + SQL)
+  Qué observar: Misma idea, vocabulario distinto (ni 'JWT' ni 'OAuth' ni 'REST'). Si recupera los mismos chunks que la consulta 1, los embeddings capturan significado y no coincidencia de palabras.
+
+  Cada resultado: chunk_id · distancia coseno · chunk_type · componente (sector, año, horas, complejidad),
+  y debajo los primeros 120 caracteres del content tal cual se embebió.
+
+   1. #1     d=0.4074  budget_component  ·  OAuth 2.0 authentication backend  (finance, 2024, 120 h, high)
+      [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | …
+   2. #11    d=0.4124  budget_component  ·  Card tokenisation vault  (finance, 2025, 150 h, high)
+      [Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard] [Client sector: finance | Year: 20…
+   3. #12    d=0.4498  budget_component  ·  3-D Secure 2 authentication flow  (finance, 2025, 110 h, high)
+      [Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard] [Client sector: finance | Year: 20…
+   4. #13    d=0.4671  budget_component  ·  Acquirer routing and settlement  (finance, 2025, 140 h, high)
+      [Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard] [Client sector: finance | Year: 20…
+   5. #2     d=0.4740  budget_component  ·  PSD2 open banking connectors  (finance, 2024, 140 h, high)
+      [Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance] [Client sector: finance | Year: 2024 | …
+
+  rango de distancias: 0.4074 … 0.4740  (margen 0.0665)
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3/5] Dominio distinto
+  Query:     "mobile application for restaurant reservations"
+  k=5  ·  5 resultado(s)  ·  216 ms (embedding de la consulta + SQL)
+  Qué observar: No hay restaurantes en el corpus. Lo esperable son distancias claramente mayores: el top-k siempre devuelve k filas, así que la señal de 'no hay nada' es la distancia, no una lista vacía.
+
+  Cada resultado: chunk_id · distancia coseno · chunk_type · componente (sector, año, horas, complejidad),
+  y debajo los primeros 120 caracteres del content tal cual se embebió.
+
+   1. #40    d=0.5317  budget_component  ·  Online appointment booking  (healthcare, 2024, 110 h, high)
+      [Project: Appointment booking and patient portal for a dental clinic network with reminders] [Client sector: healthcare…
+   2. #38    d=0.5534  budget_component  ·  Buy online, pick up in store  (ecommerce, 2022, 110 h, high)
+      [Project: Mobile shopping app for a home and garden retailer with loyalty points and store pickup] [Client sector: ecom…
+   3. #39    d=0.5559  budget_component  ·  In-app payments  (ecommerce, 2022, 60 h, medium)
+      [Project: Mobile shopping app for a home and garden retailer with loyalty points and store pickup] [Client sector: ecom…
+   4. #41    d=0.5615  budget_component  ·  SMS and WhatsApp reminders  (healthcare, 2024, 50 h, medium)
+      [Project: Appointment booking and patient portal for a dental clinic network with reminders] [Client sector: healthcare…
+   5. #35    d=0.5751  budget_component  ·  Cross-platform mobile app shell  (ecommerce, 2022, 120 h, medium)
+      [Project: Mobile shopping app for a home and garden retailer with loyalty points and store pickup] [Client sector: ecom…
+
+  rango de distancias: 0.5317 … 0.5751  (margen 0.0434)
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[4/5] Consulta ambigua
+  Query:     "integration with external system"
+  k=5  ·  5 resultado(s)  ·  224 ms (embedding de la consulta + SQL)
+  Qué observar: Genérica: muchos chunks encajan a medias (pasarelas de pago, ERPs, conectores bancarios). Lo interesante es que las cinco distancias estén muy juntas: no hay un ganador claro.
+
+  Cada resultado: chunk_id · distancia coseno · chunk_type · componente (sector, año, horas, complejidad),
+  y debajo los primeros 120 caracteres del content tal cual se embebió.
+
+   1. #28    d=0.5810  budget_component  ·  ERP integration (SAP Business One)  (ecommerce, 2023, 140 h, high)
+      [Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration] [Client sector: ecomm…
+   2. #58    d=0.5963  budget_component  ·  SAP PP confirmations  (industrial, 2024, 60 h, high)
+      [Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards] [Clie…
+   3. #52    d=0.5965  budget_component  ·  Insurance billing export  (healthcare, 2025, 50 h, low)
+      [Project: Laboratory results portal and HL7 integration with analyser instruments] [Client sector: healthcare | Year: 2…
+   4. #12    d=0.6033  budget_component  ·  3-D Secure 2 authentication flow  (finance, 2025, 110 h, high)
+      [Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard] [Client sector: finance | Year: 20…
+   5. #49    d=0.6054  budget_component  ·  Analyser interface (HL7 v2 and ASTM)  (healthcare, 2025, 140 h, high)
+      [Project: Laboratory results portal and HL7 integration with analyser instruments] [Client sector: healthcare | Year: 2…
+
+  rango de distancias: 0.5810 … 0.6054  (margen 0.0244)
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[5/5] Consulta muy específica
+  Query:     "migration from monolith to microservices architecture using Kubernetes"
+  k=5  ·  5 resultado(s)  ·  248 ms (embedding de la consulta + SQL)
+  Qué observar: Vocabulario técnico preciso. Mide si distingue entre tecnologías vecinas o si se conforma con recuperar cualquier cosa que suene a infraestructura.
+
+  Cada resultado: chunk_id · distancia coseno · chunk_type · componente (sector, año, horas, complejidad),
+  y debajo los primeros 120 caracteres del content tal cual se embebió.
+
+   1. #59    d=0.6079  budget_component  ·  Telemetry ingestion  (industrial, 2023, 130 h, high)
+      [Project: IoT predictive maintenance platform for industrial refrigeration units] [Client sector: industrial | Year: 20…
+   2. #63    d=0.6850  budget_component  ·  Firmware over-the-air updates  (industrial, 2023, 60 h, high)
+      [Project: IoT predictive maintenance platform for industrial refrigeration units] [Client sector: industrial | Year: 20…
+   3. #61    d=0.6854  budget_component  ·  Alerting and technician dispatch  (industrial, 2023, 90 h, medium)
+      [Project: IoT predictive maintenance platform for industrial refrigeration units] [Client sector: industrial | Year: 20…
+   4. #49    d=0.6886  budget_component  ·  Analyser interface (HL7 v2 and ASTM)  (healthcare, 2025, 140 h, high)
+      [Project: Laboratory results portal and HL7 integration with analyser instruments] [Client sector: healthcare | Year: 2…
+   5. #62    d=0.6904  budget_component  ·  Fleet dashboard  (industrial, 2023, 100 h, medium)
+      [Project: IoT predictive maintenance platform for industrial refrigeration units] [Client sector: industrial | Year: 20…
+
+  rango de distancias: 0.6079 … 0.6904  (margen 0.0824)
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+LECTURA COMPARADA
+
+  consulta                        mejor     peor   margen     ms  primer resultado
+  ────────────────────────────  ───────  ───────  ───────  ─────  ──────────────────────────────────────────────
+  Componente directo conocido    0.4109   0.4879   0.0770    354  OAuth 2.0 authentication backend
+  Reformulación semántica        0.4074   0.4740   0.0665    214  OAuth 2.0 authentication backend
+  Dominio distinto               0.5317   0.5751   0.0434    216  Online appointment booking
+  Consulta ambigua               0.5810   0.6054   0.0244    224  ERP integration (SAP Business One)
+  Consulta muy específica        0.6079   0.6904   0.0824    248  Telemetry ingestion
+

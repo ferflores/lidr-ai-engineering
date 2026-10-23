@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.encoding_for_model('text-embedding-3-small')"
 
 # 2) El código: API (app/), plantillas de prompt (prompts/), interfaz (streamlit_app.py + .streamlit/config.toml),
-#    scripts/ y data/ (pre-work sesión 07)
+#    scripts/, data/ y las migraciones de Alembic,
 #    y las transcripciones y adjuntos de ejemplo que carga la interfaz.
 #    El .env NO se copia (ver .dockerignore): llega como variables de entorno por docker compose.
 COPY app ./app
@@ -30,9 +30,14 @@ COPY prompts ./prompts
 COPY streamlit_app.py ./
 COPY .streamlit/config.toml ./.streamlit/config.toml
 COPY transcripciones ./transcripciones
-# Pre-work sesión 07: scripts/compare.py se ejecuta con `docker compose exec api ...` y data/ trae el sample de presupuestos.
+# scripts/ se ejecuta con `docker compose run --rm api ...` y data/ trae el sample de presupuestos.
 COPY scripts ./scripts
 COPY data ./data
+# Pre-work sesión 08: las migraciones (`alembic upgrade head`) y el script de las cinco consultas de ejemplo
+# (`python query_examples.py`) se ejecutan dentro del contenedor, así que entran en la imagen.
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY query_examples.py ./
 
 # Usuario sin privilegios
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app

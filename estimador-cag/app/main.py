@@ -8,10 +8,11 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.embedding_pipeline.router import router as embeddings_router
+from app.embedding_pipeline.router import search_router
 from app.routers import estimations, sessions
 from app.services.observability import configure_logging
 from app.services.sessions import get_session_store
@@ -44,10 +45,14 @@ Las sesiones viven en memoria del proceso.
 por una **caché** (exacta y semántica), y todo se agrega en un único evento `turn_observed` que
 `GET /api/v1/sessions/{session_id}` expone como `last_turn_observed`.
 
-**Embeddings** (pre-work sesión 07): `POST /embeddings/ingest` recibe presupuestos históricos en JSON, los parte
-con un **chunker estructural** (un componente = un chunk, con cabecera de contexto del presupuesto padre) y los
-vectoriza con `text-embedding-3-small` por lotes. Devuelve los chunks con su vector y las estadísticas (tokens,
-coste); todavía no se persisten (PostgreSQL + pgvector llega en la sesión 08).
+**Embeddings y búsqueda semántica** (pre-work sesiones 07 y 08): `POST /embeddings/ingest` recibe un presupuesto
+histórico en JSON, lo parte con un **chunker estructural** (un componente = un chunk, con cabecera de contexto
+del presupuesto padre), lo vectoriza con `text-embedding-3-small` por lotes y **lo persiste en PostgreSQL +
+pgvector** (`documents` + `chunks`) en una sola transacción. `POST /search` vectoriza una consulta y devuelve
+los **k chunks más cercanos por distancia coseno**, resuelto en SQL con el operador `<=>`.
+
+Todavía **sin índice vectorial** (sequential scan, el baseline del directo), sin filtros por metadata y sin
+búsqueda híbrida.
 """
 
 settings = get_settings()
@@ -59,7 +64,8 @@ app = FastAPI(
     openapi_tags=[
         {"name": "Estimaciones", "description": "Generación de estimaciones de software con un LLM (una petición, una estimación)."},
         {"name": "Sesiones", "description": "Conversaciones multi-turno con memoria del proyecto y adjuntos."},
-        {"name": "Embeddings", "description": "Chunking estructural de presupuestos JSON y generación de embeddings (sin persistencia todavía)."},
+        {"name": "Embeddings", "description": "Chunking estructural de presupuestos JSON, embeddings y persistencia en PostgreSQL + pgvector."},
+        {"name": "Búsqueda semántica", "description": "Recuperación de los k chunks más cercanos a una consulta por distancia coseno (pgvector)."},
         {"name": "Sistema", "description": "Estado y diagnóstico del servicio."},
     ],
 )
@@ -67,6 +73,7 @@ app = FastAPI(
 app.include_router(estimations.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(embeddings_router, prefix="/embeddings")  # POST /embeddings/ingest (ruta fijada por el enunciado de la sesión 07)
+app.include_router(search_router)  # POST /search, en la raíz (ruta fijada por el enunciado de la sesión 08)
 
 
 class HealthResponse(BaseModel):
@@ -81,6 +88,7 @@ class HealthResponse(BaseModel):
     active_sessions: int
     embedding_model: str
     embeddings_configured: bool
+    database: str = Field(description="URL de PostgreSQL sin la contraseña. No se comprueba la conexión: /health no hace E/S.")
     timestamp: datetime
 
 
@@ -99,5 +107,6 @@ async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         active_sessions=len(get_session_store()),
         embedding_model=settings.embedding_model,
         embeddings_configured=bool((settings.openai_api_key or "").strip()),
+        database=settings.database_dsn_safe,
         timestamp=datetime.now(timezone.utc),
     )

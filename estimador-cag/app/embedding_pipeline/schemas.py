@@ -11,6 +11,9 @@ para embeber y chunks ya vectorizados. Decisiones:
 - `sector` es un `Literal` cerrado (sugerencia del enunciado). Si un dataset propio trae un sector nuevo,
   se añade a `Sector`: es un cambio de vocabulario explícito, no un dato que se cuela sin querer.
 - `Chunk.metadata` guarda los campos filtrables, que viajan con el chunk pero **no** se embeben.
+- `IngestRequest` / `SearchRequest` son los contratos HTTP de la sesión 08: un documento por ingesta y
+  una consulta por búsqueda. `Chunk` y `EmbeddedChunk` siguen siendo los objetos internos del pipeline
+  (lo que produce el chunker y lo que devuelve el embedder antes de persistirse).
 """
 
 from __future__ import annotations
@@ -105,26 +108,71 @@ class EmbeddedChunk(Chunk):
     embedding: list[float] = Field(min_length=1, description="Vector returned by the embedding model.")
 
 
+# --- Contrato de POST /embeddings/ingest (sesión 08: un documento por petición, persistido) --------------
+#
+# La sesión 07 recibía `{"budgets": [...]}` y devolvía los chunks con sus vectores en la respuesta. Ahora la
+# unidad es **un documento**: un presupuesto con su ruta de origen, que se persiste en PostgreSQL y del que
+# solo vuelven identificadores y métricas. Los vectores ya no viajan por HTTP: viven en la base.
+
+
 class IngestRequest(BaseModel):
+    """Un documento a ingestar. `content` es el presupuesto completo, validado como `Budget`."""
+
     model_config = ConfigDict(extra="forbid")
 
-    budgets: list[Budget] = Field(min_length=1)
-
-
-class IngestStats(BaseModel):
-    """Agregados de una ingesta. Los cuatro primeros son los que pide el enunciado."""
-
-    total_budgets: int
-    total_chunks: int
-    total_tokens: int = Field(description="Input tokens billed by the API (sum of usage.prompt_tokens over batches).")
-    estimated_cost_usd: float = Field(description="total_tokens × list price of the embedding model.")
-    counted_tokens: int = Field(description="Tokens counted locally with tiktoken before calling the API (sum of chunk.token_count).")
-    embedding_model: str
-    dimensions: int
-    batches: int
-    latency_ms: int = Field(description="Chunking + embedding wall time.")
+    source_path: str = Field(
+        min_length=1,
+        max_length=500,
+        description="Where the document comes from; unique per document (a second ingest of the same path is a 409).",
+    )
+    document_type: str = Field(min_length=1, max_length=50, description="e.g. historical_budget.")
+    content: Budget = Field(description="The full budget JSON, the same schema the chunker consumes.")
 
 
 class IngestResponse(BaseModel):
-    chunks: list[EmbeddedChunk]
-    stats: IngestStats
+    """Lo que devuelve una ingesta correcta (200). Exactamente los cuatro campos del enunciado.
+
+    Los tokens y el coste **no** están aquí porque el contrato no los incluye: se registran en el evento
+    structlog `embedding_ingest_completed`, que es donde el proyecto mide el gasto desde la sesión 03.
+    """
+
+    document_id: int
+    chunks_created: int
+    embedding_dimension: int
+    ingestion_time_ms: int
+
+
+class IngestConflictResponse(BaseModel):
+    """Respuesta 409: ya hay un documento con ese `source_path`."""
+
+    detail: str = Field(examples=["Document already ingested"])
+    document_id: int
+
+
+# --- Contrato de POST /search ----------------------------------------------------------------------------
+
+
+class SearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=2000, description="Natural-language query; embedded with the same model used at ingest time.")
+    # El tope de 100 no es del enunciado: evita que una petición pida medio corpus en una sola respuesta.
+    k: int = Field(default=5, ge=1, le=100, description="How many nearest chunks to return.")
+
+
+class SearchResult(BaseModel):
+    """Un chunk recuperado. `distance` es la distancia coseno: 0 = idéntico, cuanto menor, más cercano."""
+
+    chunk_id: int
+    document_id: int
+    chunk_type: str
+    content: str
+    distance: float
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SearchResponse(BaseModel):
+    query: str
+    k: int
+    search_time_ms: int = Field(description="Query embedding + SQL round trip.")
+    results: list[SearchResult]

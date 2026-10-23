@@ -128,6 +128,9 @@ estimador-cag/
 │       ├── report.py           # REPORT.md a partir del CSV: tabla resumen, tres curvas, lectura
 │       ├── results.csv         # una fila por turno con los 13 campos de turn_observed y las métricas
 │       └── REPORT.md           # el deliverable de la sesión 06
+├── app/db/                     # persistencia (sesión 08)
+│   ├── models.py               # Base, Document, Chunk (vector(1536), metadata JSONB, cascada)
+│   └── session.py              # motor async (asyncpg) y la dependencia de sesión por petición
 ├── streamlit_app.py            # conversación por turnos: formulario + adjuntos, panel de memoria, compresión e historial
 ├── .streamlit/                 # config.toml (headless) y secrets.toml.example (alternativa a .env)
 ├── tests/                      # pytest: API, sesiones (httpx.AsyncClient), adjuntos, extractor, plantillas, streaming e interfaz
@@ -136,9 +139,16 @@ estimador-cag/
 │   ├── estimar-sesion.sh       # conversación de tres turnos con curl (el tercero con PDF y Word adjuntos)
 │   ├── generar-adjuntos.py     # genera transcripciones/adjuntos/*.pdf y *.docx de ejemplo
 │   ├── comparar.py             # compara transcripciones: tokens, coste, ahorro y estimación
-│   ├── compare.py              # similitud coseno entre dos textos vía embeddings (sesión 07)
+│   ├── ingest_corpus.py        # ingesta los 15 presupuestos del corpus, uno por documento (sesión 08)
 │   ├── generar-json.sh         # crea transcripciones/*.json a partir de los .txt
 │   └── verificar.sh            # estructura + tests + arranque real + sesiones (lo usa el CI)
+├── query_examples.py           # las cinco consultas semánticas del enunciado contra POST /search (sesión 08)
+├── output_examples.txt         # su output real contra el corpus de 73 chunks
+├── alembic.ini                 # config de Alembic; la URL sale de DATABASE_URL, no está escrita aquí
+├── alembic/
+│   ├── env.py                  # plantilla async + registro del tipo `vector` en el dialecto
+│   └── versions/
+│       └── 0001_initial_schema.py   # extensión vector + documents + chunks + índices no vectoriales
 ├── data/
 │   └── budgets_sample.json     # 15 presupuestos históricos normalizados (sesión 07): 73 componentes, 4+ sectores
 ├── transcripciones/            # transcripciones de ejemplo (.txt, .json para curl, panaderia-turno-2/3 para la conversación)
@@ -156,8 +166,11 @@ estimador-cag/
 ## Requisitos
 
 - [uv](https://docs.astral.sh/uv/) (instala solo el Python 3.11 fijado en `.python-version`), o bien
-  [Docker Desktop](https://www.docker.com/get-started) para ejecutarlo en contenedor.
+  [Docker Desktop](https://www.docker.com/get-started) para ejecutarlo todo en contenedores.
 - Una API key de [OpenAI](https://platform.openai.com/) o de [Anthropic](https://console.anthropic.com/).
+- **Docker**, también si se desarrolla con `uv`: desde la sesión 08 el pipeline vectorial necesita
+  PostgreSQL con pgvector, y se levanta con `docker compose up postgres -d`. El estimador y las sesiones
+  conversacionales (sesiones 02-06) siguen funcionando sin base de datos.
 
 ## Puesta en marcha
 
@@ -170,6 +183,14 @@ uv run uvicorn app.main:app --reload     # http://localhost:8000
 
 - Swagger UI: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/health>
+
+Para el pipeline vectorial (`POST /embeddings/ingest` y `POST /search`) hacen falta además la base de datos y
+sus migraciones:
+
+```bash
+docker compose up postgres -d            # PostgreSQL 16 + pgvector en localhost:5432
+uv run alembic upgrade head              # crea documents y chunks
+```
 
 Interfaz web (ver "Interfaz: conversación por turnos"). Necesita la API arrancada, porque las sesiones
 viven en el proceso de la API (`API_BASE_URL`, por defecto `http://localhost:8000`):
@@ -193,8 +214,16 @@ docker compose logs -f api chat      # ver los logs
 docker compose down                  # parar
 ```
 
-Levanta dos servicios con la misma imagen: `api` (FastAPI, puerto 8000) y `chat` (la interfaz de Streamlit, puerto
-8501, que llama a la API como `http://api:8000` dentro de la red de compose).
+Levanta tres servicios: `postgres` (PostgreSQL 16 + pgvector, puerto 5432) y, con la misma imagen, `api`
+(FastAPI, puerto 8000) y `chat` (la interfaz de Streamlit, puerto 8501, que llama a la API como
+`http://api:8000` dentro de la red de compose). `api` no arranca hasta que `pg_isready` da por sana la base.
+
+El esquema se crea aparte, con una migración (no se aplica en el arranque: una migración es un cambio
+deliberado, no un efecto secundario de levantar el servicio):
+
+```bash
+docker compose run --rm api alembic upgrade head
+```
 
 Lanzar estimaciones por curl contra el contenedor:
 
@@ -260,6 +289,12 @@ Pre-work de la sesión 07 (pipeline de embeddings):
 |---|---|---|
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Modelo de embeddings (siempre de OpenAI, usa `OPENAI_API_KEY` aunque `LLM_PROVIDER` sea `anthropic`). |
 | `EMBEDDING_BATCH_SIZE` | `100` | Chunks por llamada a la API de embeddings. |
+
+Pre-work de la sesión 08 (PostgreSQL + pgvector):
+
+| Variable | Por defecto | Para qué |
+|---|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://estimator:estimator@localhost:5432/estimator` | Conexión a PostgreSQL con el driver async. La usan la API y Alembic (`alembic.ini` no lleva la URL escrita). Dentro de compose, el host es `postgres`. |
 
 ## Probar el endpoint
 
@@ -741,8 +776,13 @@ forma de ver el CAG:
 ## Pipeline de embeddings (pre-work sesión 07)
 
 Primer paso hacia la búsqueda semántica: convertir los presupuestos históricos (la salida normalizada de la
-sesión 06) en vectores. Los vectores se generan **en memoria** y se devuelven por HTTP; la persistencia llega
-en la sesión 08 con PostgreSQL + pgvector. Ni la interfaz ni el estimador se tocan.
+sesión 06) en vectores. Ni la interfaz ni el estimador se tocan.
+
+> **El contrato de `POST /embeddings/ingest` que se describe aquí es el de la sesión 07** (recibía
+> `{"budgets": [...]}` y devolvía los vectores por HTTP). La sesión 08 lo sustituyó por un documento por
+> petición con persistencia en PostgreSQL: ver [Persistencia en PostgreSQL + pgvector](#persistencia-en-postgresql--pgvector-pre-work-sesión-08).
+> Lo que sigue vigente sin cambios es el **chunker** (un componente = un chunk, con cabecera de contexto del
+> presupuesto padre), el **embedder** por lotes y las medidas de tokens y coste.
 
 ```
 presupuestos JSON → JSONStructuralChunker → chunks (texto + metadata + token_count)
@@ -793,73 +833,13 @@ Códigos: **200** correcto, **422** body inválido (lo gestiona FastAPI con Pyda
 > en **500** cualquier petición mal formada en un entorno sin clave. Lo detectó el CI, que corre sin secrets.
 > Con la clave ausente, un body inválido sigue devolviendo 422 y solo un body válido llega al 500.
 
-### `scripts/compare.py`: similitud entre dos textos
+### `scripts/compare.py`, reemplazado
 
-```bash
-# fuera del contenedor (lee .env)
-uv run python scripts/compare.py \
-  --text-a "OAuth 2.0 authentication backend for fintech" \
-  --text-b "JWT-based authorization service for banking app"
-
-# dentro del contenedor
-docker compose exec api python scripts/compare.py \
-  --text-a "OAuth 2.0 authentication backend for fintech" \
-  --text-b "JWT-based authorization service for banking app"
-
-# JSON (para scripts) y logs del embedder en stderr
-uv run python scripts/compare.py --json --verbose --text-a "..." --text-b "..."
-```
-
-```
-Text A: OAuth 2.0 authentication backend for fintech
-Text B: JWT-based authorization service for banking app
-Cosine similarity: 0.6329
-(text-embedding-3-small, 1536 dims, 17 tokens, 0.00000034 USD, 1219 ms; norms 0.9999 / 0.9996)
-```
-
-Los dos textos viajan en **una sola llamada** (el embedder agrupa por lotes también aquí) y el coseno se
-calcula a mano: producto escalar dividido por el producto de las normas, sin numpy ni scikit-learn.
-
-### Decisiones
-
-- **Granularidad: un componente del presupuesto = un chunk.** Es la unidad de razonamiento del dominio:
-  cuando llegue un brief pidiendo un backend de autenticación, lo que queremos recuperar es ese componente,
-  no el presupuesto entero donde una vez se mencionó. Sin overlap y sin trocear descripciones largas: el
-  enunciado pide confiar en la estructura del JSON y llevar los casos raros al directo (ver más abajo).
-- **Cabecera de contexto del presupuesto padre** (proyecto, sector, año, tecnología principal) antes de los
-  datos del componente. Es la versión estática y gratuita de *Contextual Retrieval*: el contexto sale del
-  propio JSON, sin llamar a un LLM. Medido sobre este corpus, **multiplica por nueve el margen** con el que
-  una consulta del sector financiero prefiere el componente correcto frente al de otro sector (+0,1086 con
-  cabecera, +0,0114 sin ella). Está en [`SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
-- **Metadata fuera del texto.** Los campos filtrables (`budget_id`, `component_id`, `client_sector`,
-  `main_technology`, `year`, `complexity`, `estimated_hours`, más el stack y el país) viajan con el chunk pero
-  **no se embeben**: en la sesión 08 serán el `WHERE` de pgvector. El sector va además en el texto porque ahí
-  sí pesa semánticamente; no es redundancia, cada copia cumple un papel distinto.
-- **Lotes de 100 y reintentos.** `embed_many` agrupa (una llamada para los 73 chunks del sample, no 73) y
-  reintenta solo ante `RateLimitError` con esperas de 1 s, 2 s y 4 s; cualquier otro error se propaga. El
-  cliente de OpenAI se crea con `max_retries=0` para que sus reintentos no se sumen a los nuestros.
-- **El precio es una constante etiquetada** (`EMBEDDING_PRICE_USD_PER_MTOK`) porque cambia con el tiempo.
-- **Los embeddings siempre son de OpenAI**, independientemente de `LLM_PROVIDER`: el modelo lo fija el curso.
-  Se usa la dimensión por defecto (1536) sin truncar; Matryoshka queda para el directo.
-
-### Lo que midió la ingesta real (2026-10-16)
-
-| | |
-|---|---|
-| Presupuestos → chunks | 15 → **73** (4 a 6 componentes por presupuesto) |
-| Tokens de entrada | **6.919** facturados, y **6.919** contados en local con tiktoken (coinciden exactamente) |
-| Coste | **0,000138 USD** la ingesta completa |
-| Llamadas a la API | **1 lote** para los 73 chunks, 1,5 s en total |
-| Tokens por chunk | mínimo 77, mediana 94, máximo **207** |
-| Dimensión y norma | 1536; normas entre 0,9997 y 1,0006 (vectores normalizados por el modelo) |
-
-Dos observaciones para el directo:
-
-- **tiktoken predice el gasto al token.** `counted_tokens` y `total_tokens` coincidieron exactamente, así que
-  se puede presupuestar una ingesta antes de lanzarla. Útil cuando el corpus sea de miles de presupuestos.
-- **Hay un chunk que dobla a los demás**: `BUD-2024-030::PLC-001` (adquisición de datos de planta) con 207
-  tokens frente a una mediana de 94. No se trocea, como pide el enunciado, pero es el caso que conviene
-  discutir: una descripción larga diluye el vector y compite peor que una corta y enfocada.
+El script que medía la similitud coseno entre dos textos sueltos en memoria desapareció en la sesión 08:
+lo sustituye [`query_examples.py`](query_examples.py), que mide lo mismo donde importa, contra el corpus ya
+persistido y por el camino que usaría una aplicación real. La función `cosine_similarity` sigue en
+`app/embedding_pipeline/similarity.py` (la usan el sanity check y los tests); el cálculo en producción lo hace
+ahora Postgres con el operador `<=>`.
 
 ### El sanity check
 
@@ -868,6 +848,203 @@ paso 7 con sus valores reales y la lectura. Resumen: la estructura es la esperad
 relacionados 0,1920), pero la pareja "cercana" **no llega al 0,6** que sugiere el enunciado y dos textos
 genéricos ("Backend services" / "API development") dan 0,5407, casi lo mismo. Los umbrales hay que calibrarlos
 sobre el corpus propio.
+
+## Persistencia en PostgreSQL + pgvector (pre-work sesión 08)
+
+Los vectores dejan de vivir en memoria. Cada presupuesto ingestado se guarda como un **documento** con sus
+**chunks** (uno por componente, cada uno con su embedding) en una sola transacción, y `POST /search` resuelve
+una consulta en lenguaje natural por **distancia coseno en SQL**.
+
+```
+POST /embeddings/ingest                               POST /search
+  un presupuesto JSON                                   query + k
+        ↓                                                   ↓
+  documents (1 fila)                              OpenAIEmbedder.embed_one
+        ↓  flush → document_id                              ↓
+  JSONStructuralChunker → N chunks                   vector de la consulta
+        ↓                                                   ↓
+  OpenAIEmbedder (un lote)                  SELECT ... ORDER BY embedding <=> :q LIMIT k
+        ↓                                                   ↓
+  chunks (N filas con embedding) → COMMIT        k chunks + su distancia
+```
+
+### Puesta en marcha
+
+```bash
+docker compose up postgres -d                                   # Postgres 16 + pgvector
+docker compose exec postgres psql -U estimator -d estimator -c "SELECT version();"
+
+docker compose up --build -d                                    # api (8000) + chat (8501)
+docker compose run --rm api alembic upgrade head                # crea el esquema
+docker compose run --rm api python scripts/ingest_corpus.py     # 15 presupuestos → 73 chunks
+docker compose run --rm api python query_examples.py            # las cinco consultas del enunciado
+```
+
+Fuera del contenedor es lo mismo con `uv run` (el `DATABASE_URL` por defecto apunta a `localhost:5432`, que
+es lo que publica el Postgres de compose):
+
+```bash
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
+uv run python scripts/ingest_corpus.py --reset      # --reset vacía documents (los chunks caen en cascada)
+uv run python query_examples.py --output output_examples.txt
+```
+
+> El enunciado llama `ai_service` al servicio de IA; en este proyecto se llama **`api`** desde la sesión 02.
+> El comando del entregable es, por tanto, `docker compose run --rm api python query_examples.py`.
+
+### Los dos endpoints
+
+**`POST /embeddings/ingest`** — un documento por petición:
+
+```bash
+curl -s -X POST http://localhost:8000/embeddings/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"source_path": "data/budgets/budget_2024_014.json",
+       "document_type": "historical_budget",
+       "content": { "budget_id": "BUD-2024-014", "...": "el presupuesto completo" }}'
+
+{"document_id": 1, "chunks_created": 5, "embedding_dimension": 1536, "ingestion_time_ms": 1328}
+```
+
+| Código | Cuándo |
+|---|---|
+| **200** | documento y chunks persistidos |
+| **409** | ya hay un documento con ese `source_path`: `{"detail": "Document already ingested", "document_id": 1}` |
+| **422** | el body no valida (falta un campo, sector fuera del vocabulario, campo desconocido) |
+| **500** | falta `OPENAI_API_KEY` o la API de embeddings falló |
+| **503** | PostgreSQL no responde |
+
+Los **tokens y el coste no están en la respuesta** porque el contrato del enunciado tiene cuatro campos y solo
+cuatro. Siguen medidos: van al evento structlog `embedding_ingest_completed`, que es donde el proyecto lleva el
+gasto desde la sesión 03 (`total_tokens`, `counted_tokens`, `estimated_cost_usd`, `batches`).
+
+**`POST /search`** — los k chunks más cercanos:
+
+```bash
+curl -s -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "REST API with OAuth authentication for fintech sector", "k": 5}'
+```
+
+```json
+{"query": "...", "k": 5, "search_time_ms": 235,
+ "results": [{"chunk_id": 18, "document_id": 4, "chunk_type": "budget_component",
+              "content": "[Project: Mobile banking API...] Component: OAuth 2.0 authentication backend...",
+              "distance": 0.4108,
+              "metadata": {"component_name": "OAuth 2.0 authentication backend", "client_sector": "finance", "...": "..."}}]}
+```
+
+### El esquema
+
+Una migración, [`alembic/versions/0001_initial_schema.py`](alembic/versions/0001_initial_schema.py): la
+extensión `vector`, dos tablas y cuatro índices, ninguno vectorial.
+
+| `documents` | | `chunks` | |
+|---|---|---|---|
+| `id` | BIGSERIAL PK | `id` | BIGSERIAL PK |
+| `source_path` | TEXT, indexado | `document_id` | BIGINT → `documents.id` **ON DELETE CASCADE**, indexado |
+| `document_type` | VARCHAR(50) | `chunk_type` | VARCHAR(50), indexado |
+| `ingested_at` | TIMESTAMPTZ DEFAULT now() | `content` | TEXT (el texto que se embebió) |
+| `metadata` | JSONB DEFAULT '{}' | `embedding` | **VECTOR(1536)**, nullable |
+| | | `metadata` | JSONB DEFAULT '{}', **índice GIN** |
+| | | `created_at` | TIMESTAMPTZ DEFAULT now() |
+
+En SQLAlchemy el atributo no puede llamarse `metadata` (está reservado en las clases declarativas), así que los
+modelos usan `doc_metadata` / `chunk_metadata` **mapeados explícitamente** a la columna `metadata`, que es el
+nombre que fija el enunciado. `alembic/env.py` toma la URL de `DATABASE_URL` y registra el tipo `vector` en el
+dialecto (`ischema_names`); sin eso, `alembic check` no reconoce las columnas `vector` y genera migraciones
+inconsistentes. Con eso, `alembic check` sale limpio.
+
+### Las cuatro decisiones de schema
+
+**(a) Dos tablas y no una.** Un presupuesto produce N chunks (aquí, de 4 a 6). Con una sola tabla, los 10
+campos del presupuesto (cliente, sector, país, año, tecnología, horas totales…) se repetirían en cada fila: 73
+copias de 15 presupuestos, y nada que impida que dos chunks del mismo presupuesto digan que el sector es
+distinto. Normalizado, cada hecho se guarda una vez y en un solo sitio. Lo que lo decide no es el ahorro de
+bytes, es **de quién es cada dato**: el sector es del presupuesto, las horas estimadas son del componente.
+Además, `ON DELETE CASCADE` convierte «borrar un presupuesto y sus chunks» en un `DELETE FROM documents`, sin
+código que orqueste el borrado ni el riesgo de dejar chunks huérfanos apuntando a un documento que ya no está
+(`scripts/verificar.sh` lo comprueba borrando un documento y contando sus chunks antes y después).
+
+**(b) `metadata` como JSONB y no como columnas.** La regla que se aplicó: **tipado lo que la aplicación
+consulta siempre y conoce de antemano; JSONB lo que el chunker produce y puede crecer.** `document_type`,
+`chunk_type`, `source_path` y las fechas son columnas tipadas porque los endpoints y los índices dependen de
+ellas y su ausencia es un error. `client_sector`, `tech_stack`, `complexity`, `estimated_hours`,
+`component_name` o `token_count` van en JSONB porque los produce el chunker y la lista no está cerrada: en la
+sesión 07 eran nueve campos, el día que el chunker enriquezca los chunks (tags, scope, tecnologías detectadas)
+serán más, y con columnas tipadas cada campo nuevo sería una migración. El índice **GIN** es lo que hace que
+esto no sea una excusa para no modelar: permite `WHERE metadata @> '{"client_sector": "finance"}'` o
+`metadata->>'year' = '2024'` con índice, sin tocar el esquema. El precio que se paga, y que conviene decir en
+voz alta: JSONB no valida nada (un `year` puede llegar como texto) y no tiene las restricciones de integridad
+de una columna. Por eso lo que **sí** se consulta siempre está tipado.
+
+**(c) `cosine_distance` (`<=>`) y no L2 ni producto interno.** Para `text-embedding-3-small` las tres ordenan
+igual: OpenAI devuelve vectores normalizados (la norma medida en el sanity check de la sesión 07 fue 1,0000),
+y con norma 1 se cumple que `coseno = producto escalar` y que `euclídea² = 2 − 2·coseno`, que es monótona
+decreciente en el coseno. Es decir: **la elección no cambia el ranking**, cambia qué índice podrá usar Postgres
+después. Un índice HNSW se construye con una *operator class* concreta (`vector_cosine_ops`,
+`vector_l2_ops`, `vector_ip_ops`) y solo se usa si la consulta emplea el operador que le corresponde; si no
+coinciden, Postgres **ignora el índice sin avisar** y vuelve al sequential scan con la misma respuesta y mucho
+más tiempo. Fijar coseno ahora deja consulta e índice alineados para el directo. Segundo motivo, menor pero
+real: la distancia coseno vive en [0, 2] con 0 = idéntico, que es la escala de la literatura RAG y la que
+hace legible `output_examples.txt`.
+
+**(d) Sin índice vectorial, a propósito.** Es el **baseline**. Sin índice, Postgres hace sequential scan:
+calcula las 73 distancias y ordena, y eso es exacto por construcción (recall 100 %). Un HNSW es una búsqueda
+*aproximada*: va mucho más rápido y puede perderse vecinos, y la única forma de saber cuánto gana y cuánto
+pierde es tener medido el antes. Con 73 chunks el escaneo completo no es un problema (los
+`search_time_ms` de `output_examples.txt` van de 214 a 354 ms, y casi todo eso es la llamada de embedding de
+la consulta, no el SQL), así que el índice ahora mismo no compraría nada medible —construirlo sería optimizar sin
+tener el problema. `scripts/verificar.sh` y `tests/test_vector_store.py` **fallan si alguien añade un índice
+vectorial**, para que la ausencia siga siendo una decisión y no se convierta en un descuido.
+
+### Las cinco consultas
+
+[`query_examples.py`](query_examples.py) lanza las cinco del enunciado contra `/search` y escribe
+[`output_examples.txt`](output_examples.txt). Cada consulta declara **qué habría que observar** si el pipeline
+está bien, y el informe cierra con una tabla comparativa. Resultado real sobre los 73 chunks:
+
+| Consulta | Mejor | Peor | Margen | Primer resultado |
+|---|---|---|---|---|
+| Componente directo conocido | 0,4109 | 0,4879 | 0,0770 | OAuth 2.0 authentication backend |
+| Reformulación semántica | 0,4074 | 0,4740 | 0,0665 | OAuth 2.0 authentication backend |
+| Dominio distinto | 0,5317 | 0,5751 | 0,0434 | Online appointment booking |
+| Consulta ambigua | 0,5810 | 0,6054 | 0,0244 | ERP integration (SAP Business One) |
+| Consulta muy específica | 0,6079 | 0,6904 | 0,0824 | Telemetry ingestion |
+
+Cuatro lecturas, que es lo que se lleva al directo:
+
+- **Los embeddings capturan significado, no palabras.** La reformulación («secure backend service with
+  token-based access control for banking applications») no comparte *ni una* palabra de contenido con la
+  consulta directa («REST API development with JWT authentication…»), y recupera el **mismo chunk en primer
+  lugar** con una distancia incluso menor (0,4074 frente a 0,4109). Es la prueba que justifica todo el
+  pipeline: con búsqueda por palabras clave, esta consulta no habría encontrado nada.
+- **La distancia es la única señal de «aquí no hay nada».** El top-k siempre devuelve k filas: la consulta de
+  otro dominio (reservas de restaurante) devuelve cinco resultados con cara de buenos, y lo único que delata
+  que ninguno sirve es que la mejor distancia salte de 0,41 a 0,53. Un RAG sobre esto necesita un **umbral**,
+  no un `LIMIT`.
+- **La consulta ambigua no tiene ganador y se nota en el margen.** «integration with external system» produce
+  cinco distancias dentro de 0,0244 (0,5810-0,6054): el ranking es casi arbitrario. El margen entre el primero
+  y el quinto es un indicador de confianza mucho más honesto que la posición.
+- **La consulta específica expone el límite del recuperador.** No hay nada de monolito a microservicios con
+  Kubernetes en el corpus, y el sistema responde «Telemetry ingestion» a 0,6079: recupera *lo más cercano*,
+  que no es *lo relevante*. La respuesta correcta («no tengo nada de eso») requiere un umbral y, en el
+  directo, filtros y búsqueda híbrida.
+
+### Lo que no se hizo, por disciplina de scoping
+
+El enunciado reserva cuatro temas para la sesión en vivo y ninguno está aquí: **índices vectoriales** (HNSW,
+IVFFlat), **filtros por metadata** en el `WHERE` (la metadata ya está en JSONB con GIN, pero el endpoint no
+filtra), **búsqueda híbrida** (full-text + vector) y **tuning** de `shared_buffers`, `maintenance_work_mem` o
+`ef_search` (todo en valores por defecto). El test `test_search_statement_uses_the_cosine_operator_ordered_and_limited`
+comprueba incluso que la consulta **no lleva `WHERE`**.
+
+Lo que sí se añadió sobre el mínimo, y por qué: el **503** cuando Postgres no responde (sin él, una base caída
+devolvía un 500 genérico indistinguible de un fallo del embedder), el **rollback explícito** ante un fallo del
+embedder (es lo que hace cierta la atomicidad que pide el enunciado, y hay un test que lo comprueba), y
+`scripts/ingest_corpus.py` (el contrato es un documento por petición, así que ingestar el corpus del curso son
+15 llamadas; hacerlas a mano con `curl` no era razonable).
 
 ## Huecos del curso, cerrados
 
@@ -1180,9 +1357,15 @@ Para añadir un caso nuevo: escribe la transcripción en `transcripciones/<nombr
 ## Tests y verificación automática
 
 ```bash
-uv run pytest -q          # tests con el LLM sustituido por dobles (no gasta créditos)
+uv run pytest -q          # tests con el LLM sustituido por dobles (no gasta créditos, no necesita Postgres)
 scripts/verificar.sh      # estructura + tests + arranque real + llamada real si hay API key
 ```
+
+Los 251 tests corren **sin base de datos y sin API key**: la sesión de SQLAlchemy se sustituye por un doble
+(`tests/test_vector_store.py`) que registra el orden de las operaciones, y el SQL de la búsqueda se comprueba
+compilándolo al dialecto de Postgres en vez de ejecutándolo. Lo que sí necesita un Postgres de verdad
+—`alembic upgrade head`, `alembic check`, el 409, la cascada y una búsqueda real— lo verifica
+`scripts/verificar.sh` en su paso 4, y lo omite con un aviso si la base no responde.
 
 Los tests de la sesión 05 están en `tests/test_sessions_api.py` (integración con `httpx.AsyncClient` sobre la
 app ASGI), `tests/test_sessions.py` (ventana, memoria y store), `tests/test_attachments.py` (extracción) y
@@ -1202,15 +1385,21 @@ así que los tests son deterministas y comprueban el mecanismo, no la calidad de
 
 1. Que existen todos los ficheros de la estructura del ejercicio (incluidas las plantillas `v1` y `v2`),
    que `.env` está en `.gitignore` y no versionado, que no hay API keys en el código, que el texto del
-   prompt no está en el código y que `streamlit_app.py` no usa chat.
+   prompt no está en el código, que `streamlit_app.py` no usa chat, que **ninguna migración crea un índice
+   vectorial** (el baseline de la sesión 08) y que `alembic.ini` no lleva credenciales escritas.
 2. Que pasan los tests.
 3. Que el servicio arranca y responden `GET /health` (200), `GET /docs` (200), que `POST /api/v1/estimate`
    está en el OpenAPI y valida el body tipado (422 con transcripción vacía, con un enumerado inválido y con
    una versión de plantilla inexistente), que `GET /api/v1/prompts` lista `v1`, `v2` y `v3`, que
-   `POST /api/v1/sessions` crea una sesión y el endpoint multipart devuelve 404/422/415 cuando toca, y que
+   `POST /api/v1/sessions` crea una sesión y el endpoint multipart devuelve 404/422/415 cuando toca, que
+   `POST /embeddings/ingest` y `POST /search` están publicados y validan su body, que la migración renderiza
+   el esquema esperado en modo offline (`alembic upgrade head --sql`, sin necesidad de base de datos) y que
    la interfaz de Streamlit arranca.
-4. Si hay API key configurada, que `POST /api/v1/estimate` con parámetros devuelve una estimación real y
-   que una sesión de dos turnos (el segundo con el PDF de ejemplo) funciona y actualiza la memoria.
+4. Si hay API key configurada, que `POST /api/v1/estimate` con parámetros devuelve una estimación real,
+   que una sesión de dos turnos (el segundo con el PDF de ejemplo) funciona y actualiza la memoria, y —si
+   PostgreSQL responde— que la migración se aplica, que `alembic check` no detecta divergencias, que una
+   ingesta persiste el documento y la segunda devuelve 409, que borrar el documento borra sus chunks en
+   cascada y que `POST /search` devuelve resultados ordenados por distancia.
 
 El mismo script lo ejecuta el pipeline de GitHub Actions (`.github/workflows/estimador-cag.yml`, en la raíz
 del repositorio) en cada push que toque `estimador-cag/`. Un segundo job construye la imagen Docker, la
@@ -1250,10 +1439,26 @@ Checklist del pre-work de la sesión 07:
 - [x] `JSONStructuralChunker.chunk(budgets)`: un componente = un chunk, con cabecera del presupuesto padre, `chunk_id` = `{budget_id}::{component_id}`, metadata filtrable y `token_count` con tiktoken
 - [x] `OpenAIEmbedder` con `embed_one` y `embed_many`: `text-embedding-3-small` a 1536 dimensiones, lotes de 100, reintentos 1 s/2 s/4 s ante rate limit, logging structlog por lote y coste estimado
 - [x] `POST /embeddings/ingest` registrado bajo `/embeddings`, visible e invocable desde `/docs` (200 / 422 / 500)
-- [x] `scripts/compare.py` funcional dentro y fuera del contenedor, con el coseno calculado a mano
+- [x] Similitud coseno calculada a mano y verificada contra el sanity check (`app/embedding_pipeline/similarity.py`)
 - [x] `app/embedding_pipeline/SANITY_CHECK.md` con los tres valores y el comentario
 - [x] README con las instrucciones de ejecución; `pyproject.toml` con `tiktoken` añadido
-- [x] Extra (no exigido): 16 tests del pipeline sin gastar créditos (`tests/test_embedding_pipeline.py`)
+- [x] Extra (no exigido): 11 tests del pipeline sin gastar créditos (`tests/test_embedding_pipeline.py`)
+
+### Pre-work sesión 08 (PostgreSQL + pgvector)
+
+- [x] `docker-compose.yml` con el servicio `postgres` (`pgvector/pgvector:pg16`, healthcheck, volumen) y `api` esperando a que esté sano
+- [x] `SELECT version();` responde dentro del contenedor antes de seguir (paso 1 del enunciado)
+- [x] Alembic configurado con plantilla async, URL desde `DATABASE_URL` y el tipo `vector` registrado en el dialecto
+- [x] Migración `0001_initial_schema` con la extensión, `documents`, `chunks` y los cuatro índices no vectoriales
+- [x] `alembic upgrade head` aplicado y `alembic check` limpio (modelos y esquema coinciden)
+- [x] `POST /embeddings/ingest` persiste documento + chunks en una sola transacción y devuelve los cuatro campos del contrato
+- [x] Un `source_path` repetido devuelve **409** con `detail` y `document_id` al mismo nivel
+- [x] `POST /search` devuelve los k chunks más cercanos por `cosine_distance` (`<=>`), resuelto en SQL
+- [x] `query_examples.py` ejecutable con `docker compose run --rm api python query_examples.py`
+- [x] `output_examples.txt` con el output real contra el corpus (15 documentos, 73 chunks)
+- [x] Sección del README justificando las cuatro decisiones (dos tablas, JSONB, coseno, sin índice)
+- [x] Sin índices vectoriales, sin filtros por metadata, sin híbrida y sin tuning (lo comprueban el test y `verificar.sh`)
+- [x] Extra (no exigido): 34 tests de persistencia y búsqueda sin Postgres ni créditos (`tests/test_vector_store.py`)
 
 ## Decisiones de diseño
 
@@ -1315,8 +1520,15 @@ Checklist del pre-work de la sesión 06:
   hierarchical, late chunking, Contextual Retrieval con LLM) y comparación con la estructural; comparativa
   entre modelos de embeddings y Matryoshka (dimensión reducida). Preguntas que deja el sanity check: cómo
   calibrar el umbral cuando el suelo del corpus está en 0,43, si conviene top-k en lugar de umbral absoluto, y
-  qué hacer con los componentes de descripción anormalmente larga. Sesión 08: persistir los vectores en
-  PostgreSQL + pgvector y filtrar por la metadata del chunk.
+  qué hacer con los componentes de descripción anormalmente larga.
+- Sesión 08 (directo), sobre el baseline que deja este pre-work: **índice vectorial** HNSW con
+  `vector_cosine_ops` y comparación contra el sequential scan medido (214-354 ms con 73 chunks, casi todo
+  embedding de la consulta); **filtros por metadata** en el `WHERE` comparando planes de ejecución (la
+  metadata ya está en JSONB con índice GIN, lista para usarse); **búsqueda híbrida** full-text + vector; y
+  **tuning** (`shared_buffers`, `maintenance_work_mem`, `ef_search`), hoy todo en valores por defecto.
+  Preguntas que deja el output: qué umbral de distancia separa «esto sirve» de «aquí no hay nada» cuando el
+  salto medido entre dominio propio y ajeno es 0,41 → 0,53, y si el margen entre el primer y el quinto
+  resultado (0,0244 en la consulta ambigua) sirve como señal de confianza.
 - Sesión 06 (directo): RAG sobre el baseline de `evals/stress/REPORT.md`. Pendiente del directo de la 05: el
   patrón Actor-Critic-Boss (`evals/run.py --mode acb`), persistir las sesiones (Redis/Postgres) cuando haya más
   de un worker, streaming del turno con SSE y extractor LLM de `project_metadata` si la heurística se queda corta.

@@ -1,4 +1,25 @@
 services:
+  # PostgreSQL 16 con la extensión pgvector precompilada (sesión 08). Es la imagen oficial del proyecto
+  # pgvector: la extensión se instala con un solo `CREATE EXTENSION IF NOT EXISTS vector`, que hace la
+  # primera migración de Alembic. Sin índice vectorial: lo añade el directo (ver README).
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: estimador-cag-postgres
+    environment:
+      POSTGRES_DB: estimator
+      POSTGRES_USER: estimator
+      POSTGRES_PASSWORD: estimator
+    ports:
+      - "5432:5432"   # expuesto para poder inspeccionar la base con psql desde el host
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U estimator -d estimator"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: .
     image: estimador-cag:latest
@@ -7,6 +28,17 @@ services:
     env_file:
       - path: .env
         required: false   # sin .env el servicio arranca, pero /api/v1/estimate responde 500 hasta configurar la key
+    environment:
+      # Dentro de la red de compose el host es el nombre del servicio. Sobrescribe el DATABASE_URL del .env,
+      # que apunta a localhost para el desarrollo con `uv run`.
+      DATABASE_URL: postgresql+asyncpg://estimator:estimator@postgres:5432/estimator
+      # Para los scripts que hablan con la API por HTTP (`docker compose run --rm api python query_examples.py`):
+      # un contenedor de `run` no ejecuta uvicorn, así que tiene que llamar al servicio `api` por su nombre,
+      # no a su propio localhost. El servidor de este servicio no usa esta variable.
+      API_BASE_URL: http://api:8000
+    depends_on:
+      postgres:
+        condition: service_healthy   # el contenedor no arranca hasta que pg_isready responde
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -36,6 +68,7 @@ services:
         required: false
     environment:
       API_BASE_URL: http://api:8000   # nombre del servicio en la red de compose (sobrescribe el .env)
+      DATABASE_URL: postgresql+asyncpg://estimator:estimator@postgres:5432/estimator
     depends_on:
       - api
     ports:
@@ -58,3 +91,7 @@ services:
         - action: sync+restart
           path: ./streamlit_app.py
           target: /app/streamlit_app.py
+
+volumes:
+  # Los datos de Postgres sobreviven a `docker compose down`; `docker compose down -v` los borra.
+  postgres_data:

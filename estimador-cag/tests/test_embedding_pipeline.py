@@ -1,5 +1,5 @@
-"""Pipeline de embeddings (pre-work sesión 07) sin gastar créditos: chunker, embedder con un doble de la API,
-similitud, endpoint y script de comparación.
+"""Pipeline de embeddings (sesión 07) sin gastar créditos: esquemas, chunker, embedder con un doble de la API
+y métricas de similitud. La persistencia, los endpoints y los scripts están en `tests/test_vector_store.py`.
 
 El enunciado no exige tests; se añaden porque el proyecto los tiene desde la sesión 02 y porque las reglas
 (lotes de 100, reintentos 1 s/2 s/4 s, formato del chunk, coste) son fáciles de romper sin darse cuenta.
@@ -15,11 +15,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import tiktoken
-from fastapi.testclient import TestClient
 from openai import RateLimitError
 from pydantic import ValidationError
 
-from app.config import get_settings
 from app.embedding_pipeline.chunker import OVERSIZED_CHUNK_TOKENS, JSONStructuralChunker
 from app.embedding_pipeline.embedder import (
     EMBEDDING_PRICE_USD_PER_MTOK,
@@ -27,11 +25,8 @@ from app.embedding_pipeline.embedder import (
     OpenAIEmbedder,
     estimate_cost_usd,
 )
-from app.embedding_pipeline.router import get_embedder
-from app.embedding_pipeline.schemas import Budget, Chunk, IngestRequest, IngestResponse
+from app.embedding_pipeline.schemas import Budget, Chunk, IngestRequest
 from app.embedding_pipeline.similarity import cosine_similarity, dot_product, euclidean_distance, l2_norm
-from app.main import app
-from tests.conftest import make_settings
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "budgets_sample.json"
 
@@ -245,85 +240,7 @@ def test_similarity_functions():
         cosine_similarity([0.0, 0.0], [1.0, 1.0])
 
 
-# --- Endpoint ----------------------------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def client_with_fake_embedder():
-    embedder, fake_client, _ = make_embedder()
-    app.dependency_overrides[get_embedder] = lambda: embedder
-    app.dependency_overrides[get_settings] = lambda: make_settings(openai_api_key="sk-test")
-    try:
-        yield TestClient(app), fake_client
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_ingest_endpoint_returns_embedded_chunks_and_stats(client_with_fake_embedder):
-    client, fake_api = client_with_fake_embedder
-    budgets = json.loads(DATA_FILE.read_text())
-    response = client.post("/embeddings/ingest", json={"budgets": budgets[:3]})
-    assert response.status_code == 200, response.text
-    body = IngestResponse.model_validate(response.json())
-    expected_chunks = sum(len(b["components"]) for b in budgets[:3])
-    assert body.stats.total_budgets == 3 and body.stats.total_chunks == expected_chunks == len(body.chunks)
-    assert body.stats.batches == 1 and len(fake_api.calls[0]) == expected_chunks
-    assert body.stats.total_tokens > 0 and body.stats.counted_tokens > 0
-    assert body.stats.estimated_cost_usd == pytest.approx(body.stats.total_tokens * 0.02 / 1_000_000)
-    assert body.stats.embedding_model == "text-embedding-3-small" and body.stats.dimensions == 8
-    first = body.chunks[0]
-    assert first.chunk_id == "BUD-2024-014::AUTH-001" and first.text == EXPECTED_CHUNK_TEXT and len(first.embedding) == 8
-
-
-def test_ingest_endpoint_validation_errors(client_with_fake_embedder):
-    client, _ = client_with_fake_embedder
-    assert client.post("/embeddings/ingest", json={}).status_code == 422
-    assert client.post("/embeddings/ingest", json={"budgets": []}).status_code == 422
-    broken = {**STATEMENT_BUDGET, "components": [{**STATEMENT_BUDGET["components"][0], "complexity": "extreme"}]}
-    assert client.post("/embeddings/ingest", json={"budgets": [broken]}).status_code == 422
-
-
-def test_ingest_endpoint_without_api_key_is_500_with_clear_message():
-    app.dependency_overrides[get_settings] = lambda: make_settings(openai_api_key=None)
-    try:
-        client = TestClient(app)
-        response = client.post("/embeddings/ingest", json={"budgets": [STATEMENT_BUDGET]})
-        # Sin clave, un body inválido sigue siendo 422: la validación de Pydantic manda sobre el fallo de
-        # configuración. Si la clave se comprobara en la dependencia, FastAPI la resolvería antes de validar
-        # el body y devolvería 500 para cualquier petición mal formada (lo detectó el CI, que no tiene secrets).
-        invalid = client.post("/embeddings/ingest", json={"budgets": []})
-    finally:
-        app.dependency_overrides.clear()
-    assert response.status_code == 500
-    assert "OPENAI_API_KEY" in response.json()["detail"]
-    assert invalid.status_code == 422
-
-
-def test_ingest_endpoint_is_documented_in_openapi():
-    schema = TestClient(app).get("/openapi.json").json()
-    assert "/embeddings/ingest" in schema["paths"]
-    assert "post" in schema["paths"]["/embeddings/ingest"]
-
-
-# --- scripts/compare.py ------------------------------------------------------------------------------------------
-
-
-def test_compare_script_uses_one_batched_call_and_renders_similarity():
-    import importlib.util
-    import sys
-
-    spec = importlib.util.spec_from_file_location("compare", Path(__file__).resolve().parent.parent / "scripts" / "compare.py")
-    compare = importlib.util.module_from_spec(spec)
-    sys.modules["compare"] = compare  # `@dataclass` resuelve sus anotaciones mirando sys.modules
-    try:
-        spec.loader.exec_module(compare)
-
-        embedder, fake_api, _ = make_embedder()
-        result = compare.compare("Backend services", "API development", embedder)
-    finally:
-        sys.modules.pop("compare", None)
-    assert fake_api.calls == [["Backend services", "API development"]], "los dos textos viajan en una sola llamada"
-    assert result.cosine_similarity == pytest.approx(cosine_similarity(fake_vector("Backend services"), fake_vector("API development")))
-    rendered = result.render()
-    assert rendered.startswith("Text A: Backend services\nText B: API development\nCosine similarity: ")
-    assert result.dimensions == 8 and result.estimated_cost_usd == estimate_cost_usd(result.prompt_tokens)
+# Los tests del endpoint `POST /embeddings/ingest` y del script de comparación viven ahora en
+# `tests/test_vector_store.py`: en la sesión 08 el endpoint persiste en PostgreSQL en vez de devolver los
+# vectores, y `scripts/compare.py` lo sustituye `query_examples.py`. Este archivo se queda con lo que no
+# cambió: esquemas, chunker, embedder y métricas de similitud.

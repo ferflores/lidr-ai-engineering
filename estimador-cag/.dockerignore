@@ -12,7 +12,7 @@ __pycache__
 .ruff_cache
 .git
 
-# No hace falta en la imagen (scripts/ y data/ sí entran: compare.py y el sample se usan dentro del contenedor)
+# No hace falta en la imagen (scripts/, data/, alembic/ y query_examples.py sí entran: se usan dentro del contenedor)
 tests
 Dockerfile
 docker-compose.yml

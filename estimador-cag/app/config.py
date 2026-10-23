@@ -154,6 +154,27 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-small", description="Modelo de embeddings de OpenAI.")
     embedding_batch_size: int = Field(default=100, ge=1, le=2048, description="Chunks por llamada a la API de embeddings.")
 
+    # --- Base de datos vectorial (pre-work sesión 08) --------------------------------------------
+    # PostgreSQL + pgvector. El valor por defecto apunta a localhost para desarrollar con `uv run` contra el
+    # Postgres de compose (que publica el 5432); dentro de la red de compose, el servicio `api` recibe la
+    # misma URL con host `postgres`. El driver es asyncpg, el recomendado por SQLAlchemy 2.0.
+    database_url: str = Field(
+        default="postgresql+asyncpg://estimator:estimator@localhost:5432/estimator",
+        pattern=r"^postgresql\+asyncpg://",
+        description="URL de conexión a PostgreSQL con el driver async (postgresql+asyncpg://usuario:clave@host:puerto/base).",
+    )
+
+    @property
+    def database_dsn_safe(self) -> str:
+        """La URL sin la contraseña, para logs y para `/health`."""
+        url = self.database_url
+        scheme, _, rest = url.partition("://")
+        credentials, at, location = rest.rpartition("@")
+        if not at:
+            return url
+        user = credentials.partition(":")[0]
+        return f"{scheme}://{user}@{location}"
+
     # --- Parámetros del modelo ---------------------------------------------
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     llm_max_tokens: int = Field(default=4096, gt=0)

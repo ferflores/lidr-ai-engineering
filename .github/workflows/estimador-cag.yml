@@ -38,6 +38,9 @@ jobs:
         run: uv sync --frozen
 
       - name: Verificar estructura, tests y arranque del servicio
+        # Sin PostgreSQL en este job: verificar.sh comprueba la migración en modo offline
+        # (`alembic upgrade head --sql`) y omite con un aviso lo que necesita una base viva.
+        # El job `docker` de abajo sí la levanta con compose.
         run: bash scripts/verificar.sh
 
   docker:
@@ -84,6 +87,41 @@ jobs:
           # El tokenizador de tiktoken está en la imagen: el chunker funciona sin red ni API key.
           # El script va por stdin para que su indentación no dependa del bloque YAML.
           docker compose exec -T api python < scripts/ci_check_chunker.py
+
+      - name: Aplicar las migraciones y comprobar el esquema (sesión 08)
+        run: |
+          # `api` solo arranca si postgres está sano (depends_on + healthcheck), así que llegar aquí ya
+          # prueba que la base responde.
+          docker compose run --rm api alembic upgrade head
+          docker compose run --rm api alembic check
+          # Las dos tablas, la extensión y la columna vector(1536) existen de verdad.
+          docker compose exec -T postgres psql -U estimator -d estimator -tAc \
+            "SELECT extname FROM pg_extension WHERE extname = 'vector'" | grep -q vector
+          docker compose exec -T postgres psql -U estimator -d estimator -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_name IN ('documents','chunks')" | grep -q '^2$'
+          docker compose exec -T postgres psql -U estimator -d estimator -tAc \
+            "SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'chunks'::regclass AND attname = 'embedding'" | grep -q 'vector(1536)'
+          # El baseline del directo: ningún índice sobre la columna del vector.
+          test "$(docker compose exec -T postgres psql -U estimator -d estimator -tAc \
+            "SELECT count(*) FROM pg_indexes WHERE tablename = 'chunks' AND indexdef LIKE '%embedding%'")" = "0"
+
+      - name: Comprobar la búsqueda semántica (sesión 08)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          curl -sf http://127.0.0.1:8000/openapi.json | grep -q '"/search"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/search -H 'Content-Type: application/json' -d '{"query":"algo","k":0}')" = "422"
+          if [ -n "$OPENAI_API_KEY" ]; then
+            # Flujo real: ingesta -> 409 al repetir -> búsqueda con resultados.
+            # El body se genera con un script por stdin (igual que ci_check_chunker.py).
+            docker compose exec -T api python < scripts/ci_make_doc.py > /tmp/doc.json
+            curl -sf -X POST http://127.0.0.1:8000/embeddings/ingest -H 'Content-Type: application/json' -d @/tmp/doc.json | grep -q '"chunks_created"'
+            test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/embeddings/ingest -H 'Content-Type: application/json' -d @/tmp/doc.json)" = "409"
+            curl -sf -X POST http://127.0.0.1:8000/search -H 'Content-Type: application/json' \
+              -d '{"query":"OAuth authentication backend for banking","k":3}' | grep -q '"distance"'
+          else
+            echo "Sin OPENAI_API_KEY: se comprueba el contrato, no la ingesta real."
+          fi
 
       - name: Comprobar el formulario (Streamlit)
         run: |

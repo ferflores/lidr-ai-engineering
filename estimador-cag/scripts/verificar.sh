@@ -45,7 +45,11 @@ REQUIRED=(
   tests/test_stress_metrics.py
   app/embedding_pipeline/__init__.py app/embedding_pipeline/schemas.py app/embedding_pipeline/chunker.py
   app/embedding_pipeline/embedder.py app/embedding_pipeline/router.py app/embedding_pipeline/similarity.py
-  app/embedding_pipeline/SANITY_CHECK.md scripts/compare.py data/budgets_sample.json
+  app/embedding_pipeline/SANITY_CHECK.md data/budgets_sample.json
+  app/db/__init__.py app/db/models.py app/db/session.py app/embedding_pipeline/repository.py
+  alembic.ini alembic/env.py alembic/versions/0001_initial_schema.py
+  query_examples.py output_examples.txt scripts/ingest_corpus.py
+  tests/test_vector_store.py
   app/schemas/structured.py app/services/structured_output.py app/services/guardrails.py
   app/services/litellm_backend.py app/services/semantic_cache_backend.py
   docs/calibracion-cache-semantica.md
@@ -72,6 +76,21 @@ if grep -rn 'st.chat_input\|st.chat_message' streamlit_app.py >/dev/null 2>&1; t
 else
   ok "streamlit_app.py no usa chat: la interfaz es un formulario"
 fi
+# Sesión 08: el esquema no debe traer índice vectorial (es el baseline del directo) y la URL de la base no
+# debe estar escrita en el alembic.ini versionado.
+# Busca la *creación* del índice, no la palabra: la migración menciona HNSW en el comentario que explica
+# por qué no lo crea.
+if grep -qiE "using[[:space:]]*=?[[:space:]]*[\"']?(hnsw|ivfflat)" alembic/versions/*.py; then
+  fail "la migración crea un índice vectorial (HNSW/IVFFlat): el enunciado lo deja para el directo"
+else
+  ok "ninguna migración crea índice vectorial (sequential scan, el baseline del directo)"
+fi
+if grep -qE '^sqlalchemy.url *= *.+' alembic.ini; then
+  fail "alembic.ini tiene la URL de la base escrita (debe venir de DATABASE_URL)"
+else
+  ok "alembic.ini no lleva credenciales: la URL sale de DATABASE_URL"
+fi
+
 [ "$fallos" -eq 0 ] || { echo "Estructura incorrecta ($fallos fallos)"; exit 1; }
 
 echo "== 2/4 Tests =="
@@ -114,12 +133,28 @@ ATT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/v1/sess
 STATE=$(curl -s "$BASE_URL/api/v1/sessions/$SESSION_ID")
 echo "$STATE" | grep -q '"last_turn_observed"' && echo "$STATE" | grep -q '"anchors_count"' && ok "GET /api/v1/sessions/{id} expone anchors_count, summary_chars y last_turn_observed" || fail "GET /api/v1/sessions/{id} sin los campos de observación: $STATE"
 
-# Pipeline de embeddings (sesión 07): el endpoint está publicado y valida el body sin gastar créditos
+# Pipeline vectorial (sesiones 07 y 08): los endpoints están publicados y validan el body sin gastar créditos
 curl -sf "$BASE_URL/openapi.json" | grep -q '"/embeddings/ingest"' && ok "POST /embeddings/ingest está en el OpenAPI" || fail "POST /embeddings/ingest no está en el OpenAPI"
+curl -sf "$BASE_URL/openapi.json" | grep -q '"/search"' && ok "POST /search está en el OpenAPI" || fail "POST /search no está en el OpenAPI"
 EMB_EMPTY=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" -d '{}')
-[ "$EMB_EMPTY" = "422" ] && ok "POST /embeddings/ingest valida el body (422 sin presupuestos)" || fail "body vacío en /embeddings/ingest devolvió $EMB_EMPTY"
-EMB_BAD=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" -d '{"budgets":[{"budget_id":"X-1","client_metadata":{"name":"n","sector":"banking","country":"ES"},"project_summary":"s","main_technology":"t","year":2024,"total_estimated_hours":1,"components":[{"component_id":"C-1","name":"n","description":"d","tech_stack":[],"estimated_hours":1,"complexity":"high","dependencies":[]}]}]}')
+[ "$EMB_EMPTY" = "422" ] && ok "POST /embeddings/ingest valida el body (422 sin documento)" || fail "body vacío en /embeddings/ingest devolvió $EMB_EMPTY"
+EMB_BAD=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" -d '{"source_path":"x.json","document_type":"historical_budget","content":{"budget_id":"X-1","client_metadata":{"name":"n","sector":"banking","country":"ES"},"project_summary":"s","main_technology":"t","year":2024,"total_estimated_hours":1,"components":[{"component_id":"C-1","name":"n","description":"d","tech_stack":[],"estimated_hours":1,"complexity":"high","dependencies":[]}]}}')
 [ "$EMB_BAD" = "422" ] && ok "POST /embeddings/ingest rechaza un sector fuera del vocabulario (422)" || fail "sector inválido en /embeddings/ingest devolvió $EMB_BAD"
+SEARCH_BAD=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/search" -H "Content-Type: application/json" -d '{"query":"algo","k":0}')
+[ "$SEARCH_BAD" = "422" ] && ok "POST /search valida k (422 con k=0)" || fail "k=0 en /search devolvió $SEARCH_BAD"
+SEARCH_UNKNOWN=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/search" -H "Content-Type: application/json" -d '{"query":"algo","top_k":5}')
+[ "$SEARCH_UNKNOWN" = "422" ] && ok "POST /search rechaza un campo desconocido (422)" || fail "campo desconocido en /search devolvió $SEARCH_UNKNOWN"
+# La migración se renderiza sin base de datos (`--sql`): valida que el esquema es construible en el CI,
+# que no tiene Postgres en este job.
+MIGRATION_SQL=$(uv run alembic upgrade head --sql 2>/dev/null || true)
+if echo "$MIGRATION_SQL" | grep -q "CREATE EXTENSION IF NOT EXISTS vector" \
+  && echo "$MIGRATION_SQL" | grep -q "embedding VECTOR(1536)" \
+  && echo "$MIGRATION_SQL" | grep -q "REFERENCES documents (id) ON DELETE CASCADE" \
+  && echo "$MIGRATION_SQL" | grep -q "USING gin (metadata)"; then
+  ok "la migración 0001 renderiza el esquema esperado (extensión, vector(1536), cascada, GIN)"
+else
+  fail "el render offline de la migración no produce el esquema esperado"
+fi
 # El chunker funciona sin tocar la API de embeddings: 15 presupuestos del sample -> 73 chunks trazables
 if uv run python -c "
 import json
@@ -204,33 +239,89 @@ PY
   else
     fail "el endpoint no devolvió una estimación: $RESPUESTA"
   fi
-  echo "  -- ingesta real de embeddings (15 presupuestos del sample) --"
-  # La respuesta lleva 73 vectores de 1536 floats (~2 MB): va a un fichero temporal, no a una variable
-  # de entorno ni a la línea de comandos (el límite de argumentos del sistema no lo admite).
-  EMB_FILE=$(mktemp)
-  curl -sf -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" \
-    -d "{\"budgets\": $(cat data/budgets_sample.json)}" -o "$EMB_FILE" || true
-  if grep -q '"estimated_cost_usd"' "$EMB_FILE" 2>/dev/null; then
-    ok "POST /embeddings/ingest devolvió los chunks vectorizados"
-    EMB_FILE="$EMB_FILE" uv run python - <<'PY'
-import json, math, os
-data = json.load(open(os.environ["EMB_FILE"]))
-stats, chunks = data["stats"], data["chunks"]
-print(f"     {stats['total_budgets']} presupuestos -> {stats['total_chunks']} chunks · {stats['dimensions']} dims · "
-      f"{stats['total_tokens']} tokens ({stats['counted_tokens']} contados con tiktoken) · "
-      f"{stats['estimated_cost_usd']:.6f} USD · {stats['batches']} lote(s) · {stats['latency_ms']} ms")
-tokens = sorted(c["token_count"] for c in chunks)
-largest = max(chunks, key=lambda c: c["token_count"])
-norm = math.sqrt(sum(x * x for x in chunks[0]["embedding"]))
-print(f"     tokens por chunk: min={tokens[0]} p50={tokens[len(tokens)//2]} max={tokens[-1]} ({largest['chunk_id']}) · "
-      f"norma del primer vector: {norm:.4f}")
-assert len(chunks[0]["embedding"]) == stats["dimensions"] == 1536
-assert chunks[0]["chunk_id"] == "BUD-2024-014::AUTH-001"
+  echo "  -- persistencia y búsqueda semántica reales (sesión 08) --"
+  # Necesita Postgres levantado (`docker compose up postgres -d`). Si no responde, se avisa y se omite: el
+  # resto de la verificación no depende de la base de datos.
+  if uv run python -c "
+import asyncio
+from sqlalchemy import text
+from app.config import get_settings
+from app.db.session import get_engine
+async def main():
+    async with get_engine(get_settings().database_url).connect() as c:
+        await c.execute(text('SELECT 1'))
+asyncio.run(main())
+" >/dev/null 2>&1; then
+    uv run alembic upgrade head >/dev/null 2>&1 && ok "alembic upgrade head aplicado" || fail "alembic upgrade head falló"
+    uv run alembic check >/dev/null 2>&1 && ok "alembic check: los modelos y el esquema de la base coinciden" || fail "alembic check detecta divergencias entre modelos y base"
+
+    # Un documento: 200 la primera vez, 409 la segunda (mismo source_path).
+    DOC_FILE=$(mktemp)
+    uv run python -c "
+import json
+b = json.load(open('data/budgets_sample.json'))[0]
+print(json.dumps({'source_path': 'verificacion/' + b['budget_id'] + '.json', 'document_type': 'historical_budget', 'content': b}))
+" > "$DOC_FILE"
+    ING1=$(curl -s -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" -d @"$DOC_FILE")
+    ING2_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/embeddings/ingest" -H "Content-Type: application/json" -d @"$DOC_FILE")
+    if echo "$ING1" | grep -q '"document_id"' && echo "$ING1" | grep -q '"chunks_created"'; then
+      ok "POST /embeddings/ingest persistió el documento -> $ING1"
+    else
+      fail "la ingesta con persistencia no funcionó: $ING1"
+    fi
+    [ "$ING2_CODE" = "409" ] && ok "un segundo POST con el mismo source_path devuelve 409" || fail "el duplicado devolvió $ING2_CODE en vez de 409"
+    rm -f "$DOC_FILE"
+
+    # Borra el documento de prueba y comprueba el ON DELETE CASCADE: al irse el documento, sus chunks se van
+    # con él sin que nadie los borre uno a uno. Además deja la base como estaba para que output_examples.txt
+    # siga siendo reproducible (solo los 15 presupuestos del corpus).
+    if uv run python -c "
+import asyncio, sys
+from sqlalchemy import delete, func, select
+from app.config import get_settings
+from app.db.models import Chunk, Document
+from app.db.session import get_sessionmaker
+async def main():
+    async with get_sessionmaker(get_settings().database_url)() as s:
+        doc_id = await s.scalar(select(Document.id).where(Document.source_path.like('verificacion/%')))
+        if doc_id is None:
+            sys.exit('no se encontró el documento de verificación')
+        before = await s.scalar(select(func.count()).select_from(Chunk).where(Chunk.document_id == doc_id))
+        await s.execute(delete(Document).where(Document.id == doc_id))
+        await s.commit()
+        after = await s.scalar(select(func.count()).select_from(Chunk).where(Chunk.document_id == doc_id))
+        if before < 1 or after != 0:
+            sys.exit(f'la cascada no funcionó: {before} chunks antes, {after} después')
+asyncio.run(main())
+" >/dev/null 2>&1; then
+      ok "borrar el documento borra sus chunks en cascada (ON DELETE CASCADE)"
+    else
+      fail "el borrado en cascada del documento de verificación no funcionó"
+    fi
+
+    # El corpus completo (los que ya estén dan 409 y se cuentan como omitidos) y una consulta real.
+    uv run python scripts/ingest_corpus.py >/dev/null 2>&1 || true
+    SEARCH=$(curl -s -X POST "$BASE_URL/search" -H "Content-Type: application/json" \
+      -d '{"query":"REST API development with JWT authentication for financial sector","k":5}')
+    if echo "$SEARCH" | grep -q '"distance"'; then
+      ok "POST /search devolvió resultados ordenados por distancia coseno"
+      SEARCH="$SEARCH" uv run python - <<'PY'
+import json, os
+body = json.loads(os.environ["SEARCH"])
+distances = [r["distance"] for r in body["results"]]
+print(f"     {len(body['results'])} resultado(s) en {body['search_time_ms']} ms (sin índice vectorial)")
+for r in body["results"]:
+    meta = r.get("metadata") or {}
+    print(f"     #{r['chunk_id']:<5} d={r['distance']:.4f}  {meta.get('component_name', '?')} ({meta.get('client_sector', '?')})")
+assert distances == sorted(distances), "los resultados no vienen ordenados por distancia ascendente"
+assert all(0.0 <= d <= 2.0 for d in distances), "distancia coseno fuera de [0, 2]"
 PY
+    else
+      fail "POST /search no devolvió resultados: $SEARCH"
+    fi
   else
-    fail "la ingesta de embeddings no funcionó (respuesta en $EMB_FILE)"
+    echo "  ⏭  omitida (PostgreSQL no responde en DATABASE_URL; arráncalo con: docker compose up postgres -d)"
   fi
-  rm -f "$EMB_FILE"
   if [ "${SKIP_SESSION_LLM:-0}" = "1" ]; then
     echo "  ⏭  conversación omitida (SKIP_SESSION_LLM=1)"
   else
