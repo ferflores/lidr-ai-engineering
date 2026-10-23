@@ -1013,6 +1013,14 @@ está bien, y el informe cierra con una tabla comparativa. Resultado real sobre 
 | Consulta ambigua | 0,5810 | 0,6054 | 0,0244 | ERP integration (SAP Business One) |
 | Consulta muy específica | 0,6079 | 0,6904 | 0,0824 | Telemetry ingestion |
 
+Reproducibilidad, medida: repitiendo el flujo entero desde un volumen de Postgres vacío (`docker compose
+down -v`, migración, ingesta, consultas), los **`chunk_id` salen idénticos** —de ahí el `TRUNCATE ... RESTART
+IDENTITY` del `--reset`— y el **ranking es el mismo en las cinco consultas**, pero las distancias se mueven en
+el **cuarto decimal** (0,4108 frente a 0,4109; 0,6052 frente a 0,6054). La API de embeddings no es
+bit-exacta entre llamadas, así que los vectores reingestados no son idénticos a los anteriores. Es una cifra
+pequeña y aquí no cambia nada, pero conviene tenerla presente antes de comparar distancias de dos ingestas
+distintas o de fijar un umbral con cuatro decimales de precisión.
+
 Cuatro lecturas, que es lo que se lleva al directo:
 
 - **Los embeddings capturan significado, no palabras.** La reformulación («secure backend service with
