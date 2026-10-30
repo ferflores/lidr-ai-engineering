@@ -1,0 +1,123 @@
+Reunión de toma de requisitos — Recambios Hermanos Belmonte, S.L. — 21/10/2026
+
+Asistentes: Tomás Belmonte (gerente), Pilar Belmonte (administración), Quique (almacén), Ana (consultora), Pablo (tech lead).
+
+Ana: Gracias por recibirnos. Para empezar, contadnos un poco quiénes sois y qué os ha traído aquí.
+
+Tomás: Pues mira, nosotros somos de 1978. Lo empezó mi padre con una furgoneta y un local de cuarenta metros en el polígono viejo. Ahora tenemos esta nave, 2.400 metros, y somos dieciocho personas contando a los dos chóferes. Distribuimos recambio de automoción: filtros, frenos, embragues, aceites, algo de electricidad. Nuestros clientes son talleres, sobre todo talleres independientes de la provincia y algo de la de al lado. Tendremos unos mil doscientos clientes dados de alta, aunque los que compran todos los meses serán cuatrocientos y pico.
+
+Pilar: Y de esos cuatrocientos, la mitad siguen llamando por teléfono.
+
+Tomás: Eso es. Ahí está el problema, o uno de ellos. Mi hermana se pasa la mañana al teléfono.
+
+Pilar: Yo y Mari Carmen. Las dos. Desde las ocho hasta las dos, cogiendo pedidos por teléfono, y algunos por WhatsApp, que eso es lo peor, porque te mandan una foto de la pieza rota y te dicen "mándame dos de esto". Y luego hay que buscarlo.
+
+Ana: ¿Y cómo lo registráis?
+
+Pilar: En el Sage. Bueno, en el Sage lo que es la factura y el albarán. Pero el pedido en sí lo apunto en una libreta y luego lo meto. Y hay un Excel que hizo un sobrino de Tomás hace años, que es el que usamos para los precios especiales, porque el Sage no nos deja hacer lo que necesitamos ahí.
+
+Tomás: El Excel ese es un problema, Pilar, llevamos años diciéndolo.
+
+Pilar: Es un problema porque está en mi ordenador. Si yo no estoy, no hay precios.
+
+Quique: Y en almacén nosotros tenemos otra cosa, la verdad. Nosotros trabajamos con el papel que imprime Pilar. Yo preparo, lo meto en la caja, pongo la etiqueta y lo saco al muelle. Lo que pasa es que a veces el papel llega mal, o llega tarde, y el chófer ya se ha ido. Y entonces el taller llama diciendo que no le ha llegado.
+
+Tomás: Eso pasa mucho.
+
+Quique: Pasa bastante. Y luego el chófer, que hace dos rutas, una por la mañana y una a las cinco, no lleva nada más que los albaranes en una carpeta. Los firman a boli. Y hay veces que la carpeta vuelve con albaranes que no sabemos si están firmados o no.
+
+Ana: ¿Habéis pensado en algo para el reparto?
+
+Tomás: Hombre, estaría bien. Yo he visto que hay empresas que te mandan un enlace y ves dónde va la furgoneta. Eso al taller le gustaría, seguro. Pero no sé si eso es para nosotros, nosotros hacemos un radio de sesenta kilómetros, no es Amazon.
+
+Pilar: A mí lo que me preocupa más es la factura. Que cuadre. Porque ahora mismo yo hago la factura a final de mes con todos los albaranes del taller, y hay meses que me falta algún albarán y lo tengo que reclamar.
+
+Tomás: Nosotros ya intentamos algo de esto hace tres años, por cierto. Contratamos a una gente de Valencia, muy simpáticos, nos hicieron una web. Nos costó no te voy a decir cuánto pero nos costó. Y la web no sirve para nada, es un catálogo con fotos de stock que no son nuestras piezas y un formulario de contacto que llega a un correo que nadie mira. Yo con eso me quedé escarmentado, te lo digo de verdad.
+
+Ana: Lo entiendo.
+
+Tomás: Entonces ahora cuando alguien me dice "digitalización" yo pongo la oreja pero con cuidado.
+
+Pablo: Es razonable. ¿Hay algo que os esté empujando a hacerlo ahora?
+
+Tomás: Sí, mira. Hay dos cosas. La primera es que ha entrado un competidor, los de Autorrecambios Sur, que son grandes, son de Málaga, y han abierto almacén aquí. Y ellos tienen una plataforma. El taller entra, ve lo que hay, ve su precio, pide y al día siguiente lo tiene. Y a mí se me han ido tres talleres este año por eso. No por precio, ojo. Por comodidad.
+
+Pilar: Los de Autorrecambios Sur son más caros.
+
+Tomás: Son más caros y se les van los clientes igual. Eso es lo que me duele.
+
+Ana: Y la segunda cosa.
+
+Tomás: La segunda es que yo me quiero jubilar en cinco o seis años y esto no se puede quedar como está, con los precios en el Excel de mi hermana y los pedidos en una libreta. Mi hija está dentro ya, lleva la parte comercial, y ella me lo dice: papá, esto no se puede vender así.
+
+Pablo: Volviendo a lo que decíais del competidor. Si tuvierais que describir lo que el taller debería poder hacer, ¿qué sería?
+
+Tomás: Lo que de verdad necesitamos es que el taller entre con su usuario, vea su precio —porque cada taller tiene su tarifa según el volumen que nos compra, hay cinco o seis escalones— y pueda hacer el pedido sin llamarnos.
+
+Pilar: Y que lo que pida entre en el Sage solo, Tomás, que si no lo tengo que meter yo igual y no hemos ganado nada.
+
+Tomás: Eso por descontado.
+
+Ana: ¿Y qué pasa con las piezas que no tienen tarifa?
+
+Tomás: Ah, eso es otra. Hay mucho recambio que no está en tarifa, piezas de carrocería, cosas de encargo, material eléctrico raro. Ahí el taller nos pide precio, nosotros lo miramos con el proveedor y le decimos. Y para eso necesitamos que nos pida presupuesto por la web, que llegue a mi hija o al comercial que lleve esa zona, y que vuelva aprobado o rechazado, sin la cadena de correos de ahora.
+
+Pilar: Que ahora son correos y llamadas y a veces se pierde.
+
+Quique: Y luego hay lo de los palés, Tomás. Lo de los aceites.
+
+Tomás: Sí, el aceite va en palé y eso tiene un porte distinto. Y las baterías igual, que son ADR. Eso ahora lo calculo yo a mano.
+
+Ana: Apuntado. ¿Hay más sistemas con los que haya que hablar?
+
+Pilar: El Sage. Y el programa del catálogo, que es TecDoc, que lo tenemos en un ordenador aparte con una licencia. Ahí están las referencias y las equivalencias, qué filtro vale para qué coche.
+
+Tomás: Eso es importante, eh. El taller busca por matrícula o por el coche, no por nuestra referencia. Si no puede buscar por el coche, no lo va a usar.
+
+Pablo: ¿Tenéis la base de datos de TecDoc accesible de alguna forma?
+
+Pilar: Está en el ordenador de Quique. Yo no sé cómo funciona por dentro.
+
+Quique: Yo lo abro y busco. No sé más.
+
+Ana: Lo miramos. ¿Alguna preocupación con los datos, protección de datos, algo así?
+
+Pilar: A mí eso me da miedo. Porque si los talleres entran con usuario y contraseña y luego pasa algo, la responsable soy yo, ¿no? Nosotros tenemos un asesor que nos lleva el tema de la LOPD pero yo no lo tengo claro.
+
+Tomás: Eso lo vemos con el asesor, Pilar.
+
+Pablo: ¿Y el personal? ¿Cómo creéis que lo van a recibir?
+
+Pilar: Mari Carmen se jubila en año y medio y no va a aprender nada nuevo, te lo digo ya.
+
+Tomás: Mari Carmen hará lo que haga falta.
+
+Pilar: Mari Carmen no va a aprender nada nuevo, Tomás.
+
+Quique: En almacén a nosotros nos da igual, con que el papel salga bien impreso. Si es en una pantalla también, pero tiene que ser gordo porque yo con los guantes no doy en los botones pequeños.
+
+Ana: ¿Habéis pensado en una app para los talleres, o con la web vale?
+
+Tomás: Yo qué sé. Los mecánicos van con el móvil en el bolsillo, todo el día. Supongo que una app. ¿O no? Es que no sé si eso es muy caro.
+
+Pablo: Depende. Por eso preguntamos.
+
+Tomás: Mira, lo que yo quiero es que el taller nos compre fácil y que mi hermana no coja el teléfono. Si eso es una web, una web. Si es una app, una app. Eso me lo tenéis que decir vosotros.
+
+Ana: Lo valoramos y os lo proponemos. ¿Plazos y presupuesto?
+
+Tomás: Presupuesto no tengo un número. Tengo un número de lo que no quiero gastar, que es lo que me gasté con los de Valencia, pero no te lo voy a decir. De plazos, a mí me gustaría tenerlo para la feria de Motortec, que es en abril, porque allí vemos a muchos talleres y poder decirles "entrad aquí" sería un golpe de efecto.
+
+Pilar: En abril no, Tomás, que en abril es cuando más trabajo tenemos.
+
+Tomás: Bueno, para la feria. Lo que se pueda.
+
+Ana: Vale. Una última cosa: si solo pudiérais resolver una de todas las cosas que hemos hablado, ¿cuál sería?
+
+Tomás: El teléfono. Que el taller pida sin llamar.
+
+Pilar: Yo diría los precios. Que no estén en mi Excel.
+
+Quique: Que el papel llegue antes de que se vaya el chófer.
+
+Ana: Perfecto. Con esto preparamos una estimación y os la mandamos con el desglose y las dudas que nos queden abiertas.

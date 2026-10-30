@@ -1,0 +1,878 @@
+
+====================================================================================================
+PASO 1 — Vector de la transcripción completa (examples/transcripts/02_ambiguous.txt)
+====================================================================================================
+{
+  "label": "full_transcript",
+  "input_characters": 8220,
+  "input_tokens": 2384,
+  "dimensions": 1536,
+  "first_component": 0.02264404296875,
+  "last_component": 0.0139007568359375,
+  "first_3": [
+    0.02264404296875,
+    0.053253173828125,
+    -0.03302001953125
+  ],
+  "last_3": [
+    0.021575927734375,
+    0.048187255859375,
+    0.0139007568359375
+  ],
+  "l2_norm": 0.99951
+}
+
+====================================================================================================
+PASO 2 — Top-5 con el vector de la transcripción completa (cosine_distance, SQL)
+====================================================================================================
+[
+  {
+    "rank": 1,
+    "chunk_id": 33,
+    "document_id": 7,
+    "distance": 0.606656,
+    "cosine_similarity": 0.393344,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2025-008",
+    "component_id": "I18N-004",
+    "component_name": "Bilingual storefront (Spanish and Catalan)",
+    "client_sector": "ecommerce",
+    "main_technology": "wordpress",
+    "year": 2025,
+    "estimated_hours": 40,
+    "complexity": "low",
+    "content_excerpt": "[Project: Online bakery shop with next-day delivery slots, subscriptions and WooCommerce migration] | [Client sector: ecommerce | Year: 2025 | Main tech: wordpres"
+  },
+  {
+    "rank": 2,
+    "chunk_id": 29,
+    "document_id": 6,
+    "distance": 0.657044,
+    "cosine_similarity": 0.342956,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "SHIP-005",
+    "component_name": "Shipping and pallet logistics",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 80,
+    "complexity": "medium",
+    "content_excerpt": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration] | [Client sector: ecommerce | Year: 2023 | Main tech: laravel] |  | "
+  },
+  {
+    "rank": 3,
+    "chunk_id": 26,
+    "document_id": 6,
+    "distance": 0.658257,
+    "cosine_similarity": 0.341743,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "PRICE-002",
+    "component_name": "Tiered pricing and customer groups",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 90,
+    "complexity": "high",
+    "content_excerpt": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration] | [Client sector: ecommerce | Year: 2023 | Main tech: laravel] |  | "
+  },
+  {
+    "rank": 4,
+    "chunk_id": 27,
+    "document_id": 6,
+    "distance": 0.661211,
+    "cosine_similarity": 0.338789,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "QUOTE-003",
+    "component_name": "Request-for-quote workflow",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 110,
+    "complexity": "medium",
+    "content_excerpt": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration] | [Client sector: ecommerce | Year: 2023 | Main tech: laravel] |  | "
+  },
+  {
+    "rank": 5,
+    "chunk_id": 69,
+    "document_id": 15,
+    "distance": 0.663142,
+    "cosine_similarity": 0.336858,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2024-009",
+    "component_id": "ROUTE-001",
+    "component_name": "Route optimisation engine",
+    "client_sector": "logistics",
+    "main_technology": "node_express",
+    "year": 2024,
+    "estimated_hours": 150,
+    "complexity": "high",
+    "content_excerpt": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking] | [Client sector: logistics | Year: 2024 | Main tech: node_expres"
+  }
+]
+
+====================================================================================================
+PASO 2b — Dispersión de distancias de ese vector contra TODO el corpus
+====================================================================================================
+{
+  "chunks_scored": 73,
+  "min_distance": 0.606656,
+  "max_distance": 0.841863,
+  "mean_distance": 0.728062,
+  "stdev_distance": 0.04165,
+  "range_max_minus_min": 0.235207,
+  "top5_minus_top1": 0.056486,
+  "top1_vs_worst_gap": 0.235207
+}
+
+====================================================================================================
+PASO 3 — Lo que SÍ cabe por HTTP: primeros 2000 caracteres de la transcripción
+====================================================================================================
+{
+  "label": "truncated_2000_chars",
+  "input_characters": 2000,
+  "input_tokens": 585,
+  "dimensions": 1536,
+  "first_component": 0.006877899169921875,
+  "last_component": 0.0013675689697265625,
+  "first_3": [
+    0.006877899169921875,
+    0.0670166015625,
+    0.021636962890625
+  ],
+  "last_3": [
+    0.02093505859375,
+    0.01824951171875,
+    0.0013675689697265625
+  ],
+  "l2_norm": 0.999876
+}
+[
+  {
+    "rank": 1,
+    "chunk_id": 33,
+    "document_id": 7,
+    "distance": 0.588546,
+    "cosine_similarity": 0.411454,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2025-008",
+    "component_id": "I18N-004",
+    "component_name": "Bilingual storefront (Spanish and Catalan)",
+    "client_sector": "ecommerce",
+    "main_technology": "wordpress",
+    "year": 2025,
+    "estimated_hours": 40,
+    "complexity": "low"
+  },
+  {
+    "rank": 2,
+    "chunk_id": 29,
+    "document_id": 6,
+    "distance": 0.634291,
+    "cosine_similarity": 0.365709,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "SHIP-005",
+    "component_name": "Shipping and pallet logistics",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 80,
+    "complexity": "medium"
+  },
+  {
+    "rank": 3,
+    "chunk_id": 34,
+    "document_id": 7,
+    "distance": 0.647266,
+    "cosine_similarity": 0.352734,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2025-008",
+    "component_id": "RPT-005",
+    "component_name": "Sales export to Excel",
+    "client_sector": "ecommerce",
+    "main_technology": "wordpress",
+    "year": 2025,
+    "estimated_hours": 40,
+    "complexity": "low"
+  },
+  {
+    "rank": 4,
+    "chunk_id": 68,
+    "document_id": 14,
+    "distance": 0.649118,
+    "cosine_similarity": 0.350882,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2025-017",
+    "component_id": "RPT-005",
+    "component_name": "Stock reporting",
+    "client_sector": "industrial",
+    "main_technology": "django",
+    "year": 2025,
+    "estimated_hours": 40,
+    "complexity": "low"
+  },
+  {
+    "rank": 5,
+    "chunk_id": 27,
+    "document_id": 6,
+    "distance": 0.653101,
+    "cosine_similarity": 0.346899,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "QUOTE-003",
+    "component_name": "Request-for-quote workflow",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 110,
+    "complexity": "medium"
+  }
+]
+
+====================================================================================================
+PASO 4 — Control: la intención del cliente escrita a mano (lo que el sistema debería haber buscado)
+====================================================================================================
+{
+  "intent_query": "B2B web portal where workshop customers log in, see their own tier price based on purchase volume, place orders that land in the ERP, and request a quote for parts without a list price"
+}
+{
+  "label": "intent_query",
+  "input_characters": 184,
+  "input_tokens": 39,
+  "dimensions": 1536,
+  "first_component": -0.06842041015625,
+  "last_component": -0.01551055908203125,
+  "first_3": [
+    -0.06842041015625,
+    0.0269775390625,
+    -0.007427215576171875
+  ],
+  "last_3": [
+    0.01346588134765625,
+    -0.006168365478515625,
+    -0.01551055908203125
+  ],
+  "l2_norm": 0.999929
+}
+[
+  {
+    "rank": 1,
+    "chunk_id": 26,
+    "document_id": 6,
+    "distance": 0.366496,
+    "cosine_similarity": 0.633504,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "PRICE-002",
+    "component_name": "Tiered pricing and customer groups",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 90,
+    "complexity": "high"
+  },
+  {
+    "rank": 2,
+    "chunk_id": 27,
+    "document_id": 6,
+    "distance": 0.385073,
+    "cosine_similarity": 0.614927,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "QUOTE-003",
+    "component_name": "Request-for-quote workflow",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 110,
+    "complexity": "medium"
+  },
+  {
+    "rank": 3,
+    "chunk_id": 28,
+    "document_id": 6,
+    "distance": 0.410706,
+    "cosine_similarity": 0.589294,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "ERP-004",
+    "component_name": "ERP integration (SAP Business One)",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 140,
+    "complexity": "high"
+  },
+  {
+    "rank": 4,
+    "chunk_id": 25,
+    "document_id": 6,
+    "distance": 0.422708,
+    "cosine_similarity": 0.577292,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "VEND-001",
+    "component_name": "Vendor onboarding and catalog upload",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 100,
+    "complexity": "medium"
+  },
+  {
+    "rank": 5,
+    "chunk_id": 29,
+    "document_id": 6,
+    "distance": 0.424155,
+    "cosine_similarity": 0.575845,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "SHIP-005",
+    "component_name": "Shipping and pallet logistics",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 80,
+    "complexity": "medium"
+  }
+]
+
+-- dispersión de la consulta de intención contra todo el corpus --
+{
+  "chunks_scored": 73,
+  "min_distance": 0.366496,
+  "max_distance": 0.777441,
+  "mean_distance": 0.660847,
+  "stdev_distance": 0.082204,
+  "range_max_minus_min": 0.410944,
+  "top5_minus_top1": 0.057659,
+  "top1_vs_worst_gap": 0.410944
+}
+
+====================================================================================================
+PASO 5 — Ablación: la señal y el ruido de la transcripción, por separado
+====================================================================================================
+{
+  "signal_lines": [
+    "Tomás: Lo que de verdad necesitamos es que el taller entre con su usuario, vea su precio —porque cada taller tiene su tarifa según el volumen que nos compra, hay cinco o seis escalones— y pueda hacer el pedido sin llamarnos.",
+    "Pilar: Y que lo que pida entre en el Sage solo, Tomás, que si no lo tengo que meter yo igual y no hemos ganado nada.",
+    "Tomás: Ah, eso es otra. Hay mucho recambio que no está en tarifa, piezas de carrocería, cosas de encargo, material eléctrico raro. Ahí el taller nos pide precio, nosotros lo miramos con el proveedor y le decimos. Y para eso necesitamos que nos pida presupuesto por la web, que llegue a mi hija o al comercial que lleve esa zona, y que vuelva aprobado o rechazado, sin la cadena de correos de ahora."
+  ]
+}
+
+-- SOLO SEÑAL --
+{
+  "label": "solo_señal",
+  "input_characters": 740,
+  "input_tokens": 206,
+  "dimensions": 1536,
+  "first_component": 0.00937652587890625,
+  "last_component": 0.0240936279296875,
+  "first_3": [
+    0.00937652587890625,
+    0.033355712890625,
+    -0.019012451171875
+  ],
+  "last_3": [
+    0.023101806640625,
+    0.0312042236328125,
+    0.0240936279296875
+  ],
+  "l2_norm": 0.999613
+}
+[
+  {
+    "rank": 1,
+    "chunk_id": 26,
+    "document_id": 6,
+    "distance": 0.614049,
+    "cosine_similarity": 0.385951,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "PRICE-002",
+    "component_name": "Tiered pricing and customer groups",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 90,
+    "complexity": "high"
+  },
+  {
+    "rank": 2,
+    "chunk_id": 27,
+    "document_id": 6,
+    "distance": 0.616362,
+    "cosine_similarity": 0.383638,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "QUOTE-003",
+    "component_name": "Request-for-quote workflow",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 110,
+    "complexity": "medium"
+  },
+  {
+    "rank": 3,
+    "chunk_id": 29,
+    "document_id": 6,
+    "distance": 0.631986,
+    "cosine_similarity": 0.368014,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "SHIP-005",
+    "component_name": "Shipping and pallet logistics",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 80,
+    "complexity": "medium"
+  },
+  {
+    "rank": 4,
+    "chunk_id": 28,
+    "document_id": 6,
+    "distance": 0.660465,
+    "cosine_similarity": 0.339535,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "ERP-004",
+    "component_name": "ERP integration (SAP Business One)",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 140,
+    "complexity": "high"
+  },
+  {
+    "rank": 5,
+    "chunk_id": 33,
+    "document_id": 7,
+    "distance": 0.664455,
+    "cosine_similarity": 0.335545,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2025-008",
+    "component_id": "I18N-004",
+    "component_name": "Bilingual storefront (Spanish and Catalan)",
+    "client_sector": "ecommerce",
+    "main_technology": "wordpress",
+    "year": 2025,
+    "estimated_hours": 40,
+    "complexity": "low"
+  }
+]
+
+-- SOLO RUIDO --
+{
+  "label": "solo_ruido",
+  "input_characters": 7478,
+  "input_tokens": 2178,
+  "dimensions": 1536,
+  "first_component": 0.0286712646484375,
+  "last_component": 0.0142974853515625,
+  "first_3": [
+    0.0286712646484375,
+    0.051300048828125,
+    -0.025299072265625
+  ],
+  "last_3": [
+    0.01361846923828125,
+    0.049224853515625,
+    0.0142974853515625
+  ],
+  "l2_norm": 0.999838
+}
+[
+  {
+    "rank": 1,
+    "chunk_id": 33,
+    "document_id": 7,
+    "distance": 0.610574,
+    "cosine_similarity": 0.389426,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2025-008",
+    "component_id": "I18N-004",
+    "component_name": "Bilingual storefront (Spanish and Catalan)",
+    "client_sector": "ecommerce",
+    "main_technology": "wordpress",
+    "year": 2025,
+    "estimated_hours": 40,
+    "complexity": "low"
+  },
+  {
+    "rank": 2,
+    "chunk_id": 29,
+    "document_id": 6,
+    "distance": 0.658382,
+    "cosine_similarity": 0.341618,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "SHIP-005",
+    "component_name": "Shipping and pallet logistics",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 80,
+    "complexity": "medium"
+  },
+  {
+    "rank": 3,
+    "chunk_id": 34,
+    "document_id": 7,
+    "distance": 0.661538,
+    "cosine_similarity": 0.338462,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2025-008",
+    "component_id": "RPT-005",
+    "component_name": "Sales export to Excel",
+    "client_sector": "ecommerce",
+    "main_technology": "wordpress",
+    "year": 2025,
+    "estimated_hours": 40,
+    "complexity": "low"
+  },
+  {
+    "rank": 4,
+    "chunk_id": 26,
+    "document_id": 6,
+    "distance": 0.661874,
+    "cosine_similarity": 0.338126,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "PRICE-002",
+    "component_name": "Tiered pricing and customer groups",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 90,
+    "complexity": "high"
+  },
+  {
+    "rank": 5,
+    "chunk_id": 69,
+    "document_id": 15,
+    "distance": 0.664877,
+    "cosine_similarity": 0.335123,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2024-009",
+    "component_id": "ROUTE-001",
+    "component_name": "Route optimisation engine",
+    "client_sector": "logistics",
+    "main_technology": "node_express",
+    "year": 2024,
+    "estimated_hours": 150,
+    "complexity": "high"
+  }
+]
+
+====================================================================================================
+PASO 6 — Efecto del idioma: la misma intención en español y en inglés
+====================================================================================================
+
+-- intent_es: Portal B2B donde el taller entra con su usuario, ve su tarifa segun el volumen que compra, hace el pedido y este entra en el ERP, y pide presupuesto de las piezas que no tienen tarifa
+[
+  {
+    "rank": 1,
+    "chunk_id": 27,
+    "document_id": 6,
+    "distance": 0.458492,
+    "cosine_similarity": 0.541508,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "QUOTE-003",
+    "component_name": "Request-for-quote workflow",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 110,
+    "complexity": "medium"
+  },
+  {
+    "rank": 2,
+    "chunk_id": 29,
+    "document_id": 6,
+    "distance": 0.458793,
+    "cosine_similarity": 0.541207,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "SHIP-005",
+    "component_name": "Shipping and pallet logistics",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 80,
+    "complexity": "medium"
+  },
+  {
+    "rank": 3,
+    "chunk_id": 26,
+    "document_id": 6,
+    "distance": 0.459128,
+    "cosine_similarity": 0.540872,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "PRICE-002",
+    "component_name": "Tiered pricing and customer groups",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 90,
+    "complexity": "high"
+  },
+  {
+    "rank": 4,
+    "chunk_id": 28,
+    "document_id": 6,
+    "distance": 0.478632,
+    "cosine_similarity": 0.521368,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "ERP-004",
+    "component_name": "ERP integration (SAP Business One)",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 140,
+    "complexity": "high"
+  },
+  {
+    "rank": 5,
+    "chunk_id": 25,
+    "document_id": 6,
+    "distance": 0.500155,
+    "cosine_similarity": 0.499845,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "VEND-001",
+    "component_name": "Vendor onboarding and catalog upload",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 100,
+    "complexity": "medium"
+  }
+]
+
+-- intent_en: B2B web portal where workshop customers log in, see their own tier price based on purchase volume, place orders that land in the ERP, and request a quote for parts without a list price
+[
+  {
+    "rank": 1,
+    "chunk_id": 26,
+    "document_id": 6,
+    "distance": 0.366496,
+    "cosine_similarity": 0.633504,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "PRICE-002",
+    "component_name": "Tiered pricing and customer groups",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 90,
+    "complexity": "high"
+  },
+  {
+    "rank": 2,
+    "chunk_id": 27,
+    "document_id": 6,
+    "distance": 0.385073,
+    "cosine_similarity": 0.614927,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "QUOTE-003",
+    "component_name": "Request-for-quote workflow",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 110,
+    "complexity": "medium"
+  },
+  {
+    "rank": 3,
+    "chunk_id": 28,
+    "document_id": 6,
+    "distance": 0.410706,
+    "cosine_similarity": 0.589294,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "ERP-004",
+    "component_name": "ERP integration (SAP Business One)",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 140,
+    "complexity": "high"
+  },
+  {
+    "rank": 4,
+    "chunk_id": 25,
+    "document_id": 6,
+    "distance": 0.422708,
+    "cosine_similarity": 0.577292,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "VEND-001",
+    "component_name": "Vendor onboarding and catalog upload",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 100,
+    "complexity": "medium"
+  },
+  {
+    "rank": 5,
+    "chunk_id": 29,
+    "document_id": 6,
+    "distance": 0.424155,
+    "cosine_similarity": 0.575845,
+    "chunk_type": "budget_component",
+    "budget_id": "BUD-2023-012",
+    "component_id": "SHIP-005",
+    "component_name": "Shipping and pallet logistics",
+    "client_sector": "ecommerce",
+    "main_technology": "laravel",
+    "year": 2023,
+    "estimated_hours": 80,
+    "complexity": "medium"
+  }
+]
+
+====================================================================================================
+PASO 7 — Chunks genéricos: los más cercanos al centroide del corpus
+====================================================================================================
+{
+  "chunks": 73,
+  "most_generic": [
+    {
+      "distance_to_centroid": 0.205361,
+      "chunk_id": 72,
+      "budget_id": "BUD-2024-009",
+      "component_id": "ORD-004",
+      "component_name": "Order intake API and shipper portal",
+      "client_sector": "logistics"
+    },
+    {
+      "distance_to_centroid": 0.215392,
+      "chunk_id": 29,
+      "budget_id": "BUD-2023-012",
+      "component_id": "SHIP-005",
+      "component_name": "Shipping and pallet logistics",
+      "client_sector": "ecommerce"
+    },
+    {
+      "distance_to_centroid": 0.219231,
+      "chunk_id": 14,
+      "budget_id": "BUD-2025-003",
+      "component_id": "DASH-004",
+      "component_name": "Merchant dashboard",
+      "client_sector": "finance"
+    },
+    {
+      "distance_to_centroid": 0.2279,
+      "chunk_id": 10,
+      "budget_id": "BUD-2023-007",
+      "component_id": "BACK-005",
+      "component_name": "Back-office portal",
+      "client_sector": "finance"
+    },
+    {
+      "distance_to_centroid": 0.22796,
+      "chunk_id": 71,
+      "budget_id": "BUD-2024-009",
+      "component_id": "TRACK-003",
+      "component_name": "Customer tracking page and notifications",
+      "client_sector": "logistics"
+    }
+  ],
+  "most_specific": [
+    {
+      "distance_to_centroid": 0.3192,
+      "chunk_id": 8,
+      "budget_id": "BUD-2023-007",
+      "component_id": "CONTRACT-003",
+      "component_name": "Contract generation and e-signature"
+    },
+    {
+      "distance_to_centroid": 0.322363,
+      "chunk_id": 59,
+      "budget_id": "BUD-2023-025",
+      "component_id": "ING-001",
+      "component_name": "Telemetry ingestion"
+    },
+    {
+      "distance_to_centroid": 0.355555,
+      "chunk_id": 60,
+      "budget_id": "BUD-2023-025",
+      "component_id": "ML-002",
+      "component_name": "Anomaly detection and failure prediction"
+    }
+  ]
+}
+
+====================================================================================================
+PASO 8 — Solape entre los rankings
+====================================================================================================
+{
+  "top_k": 5,
+  "full_transcript_chunk_ids": [
+    33,
+    29,
+    26,
+    27,
+    69
+  ],
+  "truncated_chunk_ids": [
+    33,
+    29,
+    34,
+    68,
+    27
+  ],
+  "intent_query_chunk_ids": [
+    26,
+    27,
+    28,
+    25,
+    29
+  ],
+  "signal_only_chunk_ids": [
+    26,
+    27,
+    29,
+    28,
+    33
+  ],
+  "noise_only_chunk_ids": [
+    33,
+    29,
+    34,
+    26,
+    69
+  ],
+  "full_vs_intent_overlap": [
+    26,
+    27,
+    29
+  ],
+  "full_vs_truncated_overlap": [
+    27,
+    29,
+    33
+  ],
+  "full_vs_noise_overlap": [
+    26,
+    29,
+    33,
+    69
+  ],
+  "full_vs_signal_overlap": [
+    26,
+    27,
+    29,
+    33
+  ]
+}

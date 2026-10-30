@@ -1,0 +1,95 @@
+Reunión de toma de requisitos — Grupo Clínico Arcadia — 23/10/2026
+
+Asistentes: Dr. Javier Olmo (director médico), Nuria Prats (directora de operaciones), Sergio Ibáñez (informática interna), Ana (consultora), Pablo (tech lead).
+
+Ana: ¿Por dónde queréis empezar?
+
+Nuria: Tenemos nueve centros, seis en Cataluña y tres en Aragón. Medicina general, análisis clínicos y cuatro especialidades. El proyecto que traemos es la teleconsulta.
+
+Javier: La teleconsulta es la prioridad. Desde la pandemia nos la piden los pacientes y nosotros la hacemos por videollamada normal, con el enlace que te manda la app de siempre, y eso no es serio: no queda registro en la historia clínica, no podemos emitir receta electrónica y legalmente estamos en un sitio incómodo.
+
+Pablo: Entonces el alcance sería vídeo integrado en la historia clínica más receta electrónica.
+
+Javier: Eso. Vídeo, que quede el episodio colgado en la historia, y receta electrónica contra el nodo. Y consentimiento informado antes de la consulta, firmado.
+
+Ana: ¿Vuestra historia clínica es propia o de un proveedor?
+
+Sergio: Es de un proveedor, Clinicware. Tiene una API, regular. Documentación hay poca pero existe.
+
+Nuria: Aunque Javier, espera. Lo de la receta electrónica nos lo dijo el asesor que iba a ser un lío de certificación, ¿no?
+
+Javier: Nos dijo que había que homologarse, sí.
+
+Nuria: Entonces no sé si eso entra ahora o no.
+
+Ana: Lo dejamos marcado como duda. Seguimos: ¿hay algo más en el alcance?
+
+Nuria: Sí, hay otra cosa que a mí me parece más urgente que la teleconsulta, con perdón de Javier. Los resultados de laboratorio. Nosotros hacemos unos 1.400 análisis a la semana entre los nueve centros y los resultados los entregamos en papel o por correo electrónico, en un PDF, manualmente. Una persona a jornada completa mandando PDFs.
+
+Sergio: Jornada completa y pico.
+
+Nuria: Y el paciente llama preguntando si ya están. Y el médico de cabecera, que a veces es nuestro y a veces no, los pide por teléfono.
+
+Pablo: ¿Eso sería un portal de resultados, entonces? ¿Paciente y médico?
+
+Nuria: Portal de resultados, sí. Que el paciente entre y vea sus analíticas, con histórico, y que el médico vea las de sus pacientes. Y que los analizadores del laboratorio volcaran ahí directamente, porque ahora el técnico transcribe.
+
+Sergio: Los analizadores hablan HL7. Dos de ellos. El tercero es viejo y saca un fichero plano.
+
+Javier: Eso es verdad que es un problema diario. Más que la teleconsulta, probablemente.
+
+Nuria: Yo creo que sí.
+
+Javier: Entonces igual deberíamos darle la vuelta y hacer primero el laboratorio.
+
+Ana: Vale. Entonces, para que lo tengamos claro: ¿la prioridad pasa a ser el portal de resultados?
+
+Javier: Yo diría que sí.
+
+Nuria: Yo diría que sí.
+
+Sergio: Yo lo pondría al revés, si me dejáis. Porque el portal de resultados sin identificación digital decente no lo podemos abrir. Y hoy no tenemos ni identificación ni consentimientos ni nada. Yo primero haría la capa de identidad del paciente, con doble factor, y encima de eso lo que queráis: resultados, teleconsulta, lo que sea.
+
+Javier: Eso también es verdad.
+
+Nuria: Pero Sergio, eso no se lo puedo explicar al consejo. El consejo quiere ver algo.
+
+Sergio: Lo sé.
+
+Ana: ¿Hay más cosas en la lista? Para tenerlas todas sobre la mesa aunque no entren ahora.
+
+Nuria: Hay más, sí. Está la cita online, que hoy la tenemos pero es la del proveedor y es muy mala, el paciente se pierde. Está el recordatorio por SMS o WhatsApp, que eso lo pedimos todos los años y nunca se hace. Está la facturación a las mutuas, que es un infierno de Excel, Adeslas y Sanitas cada una con su formato. Y Javier quiere un cuadro de mandos.
+
+Javier: Quiero saber cuántos pacientes nuevos entran por centro y por especialidad. Hoy eso lo pido y tardan tres semanas en dármelo.
+
+Pablo: Son cinco o seis proyectos distintos.
+
+Nuria: Ya. Somos conscientes.
+
+Ana: ¿Hay un presupuesto o un marco temporal que nos ayude a acotar?
+
+Nuria: El consejo aprobó una partida para este ejercicio pero no te la puedo decir hasta que no vea números vuestros, porque si te la digo el presupuesto va a ser exactamente esa cifra. Ya me ha pasado.
+
+Javier: De plazos, nos gustaría tener algo funcionando antes de verano.
+
+Nuria: Antes de verano es imposible con nueve centros, Javier.
+
+Javier: En un centro piloto.
+
+Nuria: Eso sí.
+
+Ana: ¿Y cuál sería ese algo del piloto?
+
+Javier: Pues... eso es lo que tenemos que decidir, ¿no?
+
+Nuria: Yo lo del laboratorio lo veo.
+
+Sergio: Yo sin la identidad no abro nada al paciente.
+
+Javier: Y la teleconsulta la tenemos prometida a la junta desde el año pasado.
+
+Nuria: Mira, Ana, te lo digo con honestidad: no vamos a salir de aquí con el alcance cerrado. Lo que nos vendría bien es que nos mandéis una estimación de las tres cosas por separado, con horas y coste, y con eso nos sentamos el consejo, Javier y yo y decidimos. Si nos lo mandáis todo junto en un número no nos sirve.
+
+Javier: Y si veis que falta algo que nosotros no hemos visto, decidlo.
+
+Ana: Entendido. Os mandamos las tres estimaciones por separado y las dudas abiertas.

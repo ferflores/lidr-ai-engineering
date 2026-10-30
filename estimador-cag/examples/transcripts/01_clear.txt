@@ -1,0 +1,39 @@
+Reunión de toma de requisitos — Nordpay Iberia — 14/10/2026
+
+Asistentes: Elena Sáez (CTO del cliente), Marc Puig (responsable de riesgo y compliance), Ana (consultora), Pablo (tech lead).
+
+Ana: Contadnos qué queréis construir.
+
+Elena: Somos una fintech de pagos. Operamos como PSP para comercios medianos en España y Portugal y hoy tiramos de un agregador de terceros que nos cobra por transacción y no nos deja tocar nada. Queremos nuestra propia pasarela de pago.
+
+Pablo: ¿Qué alcance tiene "nuestra propia pasarela"?
+
+Elena: Cuatro piezas, las tenemos muy claras. Una: una bóveda de tokenización de tarjeta, PCI DSS, para no volver a almacenar un PAN en nuestros sistemas. Dos: el flujo de autenticación 3-D Secure 2, con exenciones SCA, porque hoy perdemos conversión en el paso de autenticación. Tres: enrutado a adquirentes y conciliación de liquidaciones; trabajamos con dos adquirentes y queremos poder enrutar por coste y por tasa de aprobación. Y cuatro: un dashboard para el comercio donde vea sus transacciones, reembolsos y liquidaciones.
+
+Marc: Y lo de los webhooks, Elena.
+
+Elena: Sí, cierto. Añade un SDK ligero y webhooks firmados para que el comercio se entere de los cambios de estado sin hacer polling. Eso lo contamos como una quinta pieza pequeña.
+
+Pablo: ¿Stack?
+
+Elena: Java con Spring Boot. Es lo que domina el equipo, es lo que tenemos en producción y no vamos a cambiarlo para este proyecto. PostgreSQL de base de datos, Kafka para los eventos de transacción, y despliegue en AWS en eu-west-1 por el tema de residencia del dato. El frontend del dashboard nos vale React, pero lo importante para nosotros es el backend.
+
+Marc: Desde compliance hay dos cosas no negociables: PSD2 y SCA, y que la bóveda quede aislada con su propio ámbito de cumplimiento PCI. Ya pasamos una auditoría el año pasado y sabemos lo que nos van a pedir.
+
+Ana: ¿Volumen?
+
+Elena: Unas 400.000 transacciones al mes ahora, esperamos duplicar en 18 meses. Picos en Black Friday y en campaña de Navidad, x4 sobre el día medio.
+
+Pablo: ¿Integraciones concretas?
+
+Elena: Redsys y Adyen como adquirentes, con sus respectivos certificados. El esquema de 3DS lo haremos contra el directory server de las marcas. Y para la conciliación necesitamos leer los ficheros de liquidación diarios de los dos adquirentes y cuadrarlos contra nuestras transacciones.
+
+Ana: ¿Equipo por vuestra parte?
+
+Elena: Dos backends senior nuestros que conocen el dominio, y nosotros ponemos el equipo de compliance. Queremos que vosotros llevéis la tokenización, el 3DS y el enrutado, que es donde no tenemos experiencia.
+
+Pablo: ¿Plazos?
+
+Elena: Queremos estar certificados y en producción con un comercio piloto en seis meses. El dashboard puede ir después del piloto si hace falta priorizar, pero la tokenización y el 3DS no se pueden partir.
+
+Ana: Perfecto, con esto podemos estimar. Os mandamos el desglose por componente.

@@ -153,6 +153,10 @@ estimador-cag/
 │   └── budgets_sample.json     # 15 presupuestos históricos normalizados (sesión 07): 73 componentes, 4+ sectores
 ├── transcripciones/            # transcripciones de ejemplo (.txt, .json para curl, panaderia-turno-2/3 para la conversación)
 │   └── adjuntos/               # especificación técnica (PDF) y propuesta anterior (Word) de la panadería
+├── examples/                   # material del diagnóstico de la sesión 09 (ver ../arquitectura-actual.md)
+│   ├── transcripts/            # 01_clear, 02_ambiguous y 03_hard: reuniones de cliente clara / ambigua / difícil
+│   ├── trace_02_ambiguous.py   # script de cliente del trace: embebe, busca, ablaciona señal vs. ruido
+│   └── trace_02_ambiguous.out.txt  # su output real contra el corpus de 73 chunks
 ├── docs/                       # comparativa de resultados (transcripción pobre vs. detallada)
 ├── Dockerfile                  # imagen basada en uv + Python 3.11 (copia app/, prompts/ y streamlit_app.py)
 ├── docker-compose.yml          # arranque con Docker, lee .env sin copiarlo a la imagen
