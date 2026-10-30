@@ -38,6 +38,10 @@ tercer decimal.
 
 ### 1.1 Las tres capas y los dos caminos
 
+> GitHub renderiza el Mermaid aquí abajo. Para proyectarlo o ampliarlo hay una versión exportada en
+> [`docs/diagramas/s09-arquitectura-actual.png`](docs/diagramas/s09-arquitectura-actual.png)
+> ([SVG](docs/diagramas/s09-arquitectura-actual.svg)).
+
 ```mermaid
 flowchart TB
     classDef cag fill:#e7edfd,stroke:#3b5bdb,color:#13224f
@@ -655,6 +659,10 @@ Y la estimación (extracto):
 
 Las cajas en **amarillo con borde discontinuo** son nuevas respecto al diagrama de la sección 1. Las azules y
 naranjas ya existen y se reutilizan tal cual.
+
+> Versión exportada para proyectar:
+> [`docs/diagramas/s09-arquitectura-propuesta.png`](docs/diagramas/s09-arquitectura-propuesta.png)
+> ([SVG](docs/diagramas/s09-arquitectura-propuesta.svg)).
 
 ```mermaid
 flowchart TB
