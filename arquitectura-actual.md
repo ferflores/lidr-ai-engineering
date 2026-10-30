@@ -279,7 +279,7 @@ Chunk a chunk, con el contenido real que hay en `chunks.content`:
 
 | # | Presupuesto | Sector / stack | Componente | ¿Relevante para lo que pide el cliente? |
 |---|---|---|---|---|
-| 1 | BUD-2025-008 · panadería online | `ecommerce` / WordPress | *Bilingual storefront (Spanish and Catalan)* — traducción del catálogo y los emails al catalán, 40 h, complejidad baja | **No. Es el peor chunk posible y es el primero.** El cliente no ha dicho una palabra sobre idiomas ni traducciones. Mi hipótesis: es el único chunk del corpus que nombra un idioma humano ("Spanish", "Catalan") y la transcripción está en español; sumado a que es un chunk corto y genérico, gana por alineamiento superficial, no por contenido |
+| 1 | BUD-2025-008 · panadería online | `ecommerce` / WordPress | *Bilingual storefront (Spanish and Catalan)* — traducción del catálogo y los emails al catalán, 40 h, complejidad baja | **No. Es el peor chunk posible y es el primero.** El cliente no ha dicho una palabra sobre idiomas ni traducciones. Mi hipótesis: de los 73 chunks, solo **dos** contienen la palabra "Spanish" —este, que habla de traducir al catalán, y `PSD2-002`, que habla de *Spanish banks*— y este es el único que trata el idioma como idioma. La transcripción está en español: gana por alineamiento superficial, no por contenido |
 | 2 | BUD-2023-012 · marketplace B2B | `ecommerce` / Laravel | *Shipping and pallet logistics* — cálculo de portes por peso, volumen y palés, 80 h | **Parcialmente sí**, y por casualidad: Quique mencionó los palés de aceite y las baterías ADR. Pero es un detalle de la reunión, no el encargo. Aparece además en **los tres rankings** del trace, y es el 2.º chunk más cercano al centroide del corpus (d=0,2154): es un chunk genérico que sale casi con cualquier consulta |
 | 3 | BUD-2023-012 · marketplace B2B | `ecommerce` / Laravel | *Tiered pricing and customer groups* — precios por grupo de cliente con escalones, 90 h | **Sí. Es el chunk exacto.** "Cada taller tiene su tarifa según el volumen que nos compra, hay cinco o seis escalones" es literalmente este componente. Está en el puesto 3, a 0,0516 del falso positivo que lo adelanta |
 | 4 | BUD-2023-012 · marketplace B2B | `ecommerce` / Laravel | *Request-for-quote workflow* — petición de presupuesto, aprobación y conversión a pedido, 110 h | **Sí.** Es la segunda frase útil del cliente, la de "que nos pida presupuesto por la web […] y que vuelva aprobado o rechazado" |
@@ -615,9 +615,10 @@ Y la estimación (extracto):
 - **Problema observado.** Siguiendo `PRICE-002`, el chunk exacto (paso 8): las tres frases del cliente
   literales dan **0,6140**; reescritas como enunciado técnico en español, **0,4591**; el mismo enunciado en
   inglés, **0,3665**. Reescribir vale −0,155 y traducir otros −0,093. Y el falso positivo que gana el
-  ranking de la transcripción completa es, de los 73 chunks, el único que nombra un idioma humano
-  (*Bilingual storefront (Spanish and Catalan)*): un chunk de traducción al catalán de una panadería
-  WordPress, 40 h, que no tiene nada que ver con el encargo.
+  ranking de la transcripción completa es, de los 73 chunks, el único que trata un idioma humano **como
+  idioma** (*Bilingual storefront (Spanish and Catalan)*, traducción al catalán de una panadería WordPress,
+  40 h): `grep` sobre `chunks.content` devuelve solo otro chunk con la palabra "Spanish", y ahí se refiere
+  a *Spanish banks*.
 - **Causa probable.** El corpus se construye con `chunker.render_text`, que genera inglés técnico y
   esquemático (`Component: … Description: … Tech stack: … Complexity: …`), mientras que la entrada es
   castellano hablado con interrupciones. `text-embedding-3-small` es multilingüe, pero no borra la
@@ -725,20 +726,18 @@ flowchart TB
 
 ### 4.2 Responsabilidades, datos y la pieza crítica
 
-`query_builder/` recibe la transcripción entera y produce una **intención estructurada**: la lista de cosas
-que el cliente quiere construir, cada una convertida en una consulta corta de enunciado técnico en inglés,
-más el sector y el stack que se hayan mencionado y las dudas que quedan abiertas. `retriever/` recibe esa
-lista, lanza una búsqueda por feature con filtro por metadata, fusiona los resultados deduplicando por
-`chunk_id` y descarta lo que no pase el umbral, devolviendo chunks con su distancia y la feature que los
-trajo. `evidence_builder/` agrupa esos chunks por presupuesto, resuelve el documento padre para traer
-cliente, año y total de horas, y entrega un bloque de evidencia por feature que la plantilla `v5` inyecta en
-el prompt en lugar de los tres ejemplos estáticos; de ahí sale una estimación que cita
-`budget_id::component_id` por línea y declara lo que no tiene precedente. `estimation_trace` observa las tres
-etapas con un solo evento. **La pieza crítica es `query_builder/`**: el paso 6 del trace mide que 39 tokens
-de intención bien escrita llevan la mejor distancia de 0,607 a 0,367 y la precisión de 2/5 a 5/5 **sin tocar
-el retriever**, y el paso 7 demuestra que sin esa etapa el ranking lo decide el ruido. Un reranker o un
-índice HNSW sobre el ranking actual estaría reordenando azar; si solo pudiera construir una caja, construiría
-esa.
+`query_builder/` convierte la transcripción en **intención estructurada**: una consulta corta, en inglés
+técnico, por cada cosa que el cliente quiere construir, más el sector y el stack mencionados. `retriever/`
+recibe esa lista, lanza una búsqueda por feature filtrando por metadata, fusiona deduplicando por `chunk_id`
+y descarta lo que no pase el umbral; devuelve chunks con su distancia y la feature que los trajo.
+`evidence_builder/` los agrupa por presupuesto, resuelve el documento padre para traer cliente, año y total
+de horas, y arma el bloque de evidencia que la plantilla `v5` inyecta en lugar de los tres ejemplos
+estáticos; de ahí sale una estimación que cita `budget_id::component_id` por línea y declara lo que no tiene
+precedente. `estimation_trace` observa las tres etapas con un solo evento. **La pieza crítica es
+`query_builder/`**: el paso 6 mide que 39 tokens de intención bien escrita llevan la mejor distancia de 0,607
+a 0,367 y la precisión de 2/5 a 5/5 sin tocar el retriever, y el paso 7 demuestra que sin esa etapa el
+ranking lo decide el ruido.
+Un reranker o un HNSW encima del ranking de hoy estaría reordenando azar.
 
 ---
 
@@ -758,8 +757,8 @@ Todos verificados con el mismo script, cambiando la transcripción:
    justo donde se habla de vídeo, antes de que Nuria cambie la prioridad.
 3. **El chunk del catalán es un imán del castellano.** *Bilingual storefront (Spanish and Catalan)* no solo
    gana en `02_ambiguous.txt`: en `01_clear.txt` (una transcripción de pagos, sector `finance`) aparece en el
-   puesto **7**, por delante de cinco componentes de presupuestos de banca. Es el único chunk del corpus que
-   nombra un idioma humano y la entrada siempre está en español.
+   puesto **7**, por delante de cinco componentes de presupuestos de banca. Es el único chunk del corpus que trata un idioma
+   humano como idioma, y la entrada siempre está en español.
 4. **`SearchResult` no permite remontar al presupuesto padre.** Devuelve `document_id`, pero ni el cliente,
    ni el año, ni el `total_estimated_hours` del presupuesto: la metadata de documento vive en
    `documents.metadata` y hace falta una segunda consulta. Para fundamentar una estimación hay que saber que
