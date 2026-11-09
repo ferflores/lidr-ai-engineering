@@ -108,8 +108,9 @@ jobs:
       - name: Comprobar la columna full-text y el reranker (sesión 10)
         run: |
           # Migración 0002: tsvector GENERADA y almacenada ('s' = stored) con configuración english, y su GIN.
+          # (`attgenerated` es de tipo "char": sin el cast a text la concatenación es ambigua para Postgres.)
           test "$(docker compose exec -T postgres psql -U estimator -d estimator -tAc \
-            "SELECT format_type(atttypid, atttypmod) || '/' || attgenerated FROM pg_attribute WHERE attrelid = 'chunks'::regclass AND attname = 'content_tsv'")" = "tsvector/s"
+            "SELECT format_type(atttypid, atttypmod) || '/' || attgenerated::text FROM pg_attribute WHERE attrelid = 'chunks'::regclass AND attname = 'content_tsv'")" = "tsvector/s"
           docker compose exec -T postgres psql -U estimator -d estimator -tAc \
             "SELECT pg_get_expr(adbin, adrelid) FROM pg_attrdef WHERE adrelid = 'chunks'::regclass AND adnum = (SELECT attnum FROM pg_attribute WHERE attrelid = 'chunks'::regclass AND attname = 'content_tsv')" \
             | grep -q "to_tsvector('english'::regconfig, content)"
