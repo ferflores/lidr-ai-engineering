@@ -25,13 +25,22 @@ from datetime import datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import BigInteger, Computed, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # Dimensión de text-embedding-3-small. Está aquí y en la migración 0001 (una migración es un registro
 # histórico y no se reescribe); `tests/test_db_models.py` comprueba que no se desincronizan.
 EMBEDDING_DIMENSIONS = 1536
+
+# Text search configuration of the lexical branch (session 10). `english` because the corpus is written in
+# English (the exercise statement's "the dataset is in Spanish" describes the official course dataset, not
+# this project's `data/budgets_sample.json`): the configuration drives stemming and stop words, so it has to
+# follow the language of the content. Duplicated in migration 0002 on purpose (a migration is a historical
+# record); `tests/test_retrieval.py` checks both stay in agreement. The same configuration normalises the
+# query at search time, otherwise "payments" in the query and "payment" in a chunk would never meet.
+TEXT_SEARCH_CONFIG = "english"
+TSVECTOR_EXPRESSION = f"to_tsvector('{TEXT_SEARCH_CONFIG}'::regconfig, content)"
 
 # Vocabulario de `chunks.chunk_type`. Hoy solo hay un tipo: un componente de presupuesto. La columna existe
 # porque el chunker de otros documentos (transcripciones, especificaciones) producirá otros tipos, y porque
@@ -83,6 +92,15 @@ class Chunk(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # nullable: el chunk puede existir antes que su vector (ingesta asíncrona, sesiones posteriores).
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    # Session 10: lexical branch of hybrid search. A STORED generated column: Postgres derives the lexemes from
+    # `content` on every write, so the application never has to keep it in sync, and the GIN index below can
+    # serve `content_tsv @@ query`. Nothing in the ORM ever writes it (SQLAlchemy excludes Computed columns
+    # from INSERT/UPDATE).
+    content_tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed(TSVECTOR_EXPRESSION, persisted=True),
+        nullable=True,
+    )
     chunk_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -94,4 +112,6 @@ class Chunk(Base):
         # GIN sobre el JSONB: permite consultar por claves arbitrarias (`metadata @> '{"client_sector": ...}'`)
         # sin migrar el esquema cada vez que el chunker añade un campo.
         Index("ix_chunks_metadata_gin", "metadata", postgresql_using="gin"),
+        # GIN over the tsvector: the index type Postgres recommends for full-text `@@` queries (session 10).
+        Index("ix_chunks_content_tsv_gin", "content_tsv", postgresql_using="gin"),
     )

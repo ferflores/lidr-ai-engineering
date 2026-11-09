@@ -27,7 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from app.db.models import CHUNK_TYPE_BUDGET_COMPONENT, Chunk, Document
 from app.embedding_pipeline.chunker import JSONStructuralChunker
 from app.embedding_pipeline.embedder import EmbeddingUsage, OpenAIEmbedder
-from app.embedding_pipeline.schemas import Budget, SearchResult
+from app.embedding_pipeline.schemas import Budget, RankSignals, SearchResult
 
 log = structlog.get_logger(__name__)
 
@@ -154,7 +154,11 @@ def build_search_statement(query_vector: list[float], k: int):
 
 
 async def search_chunks(session: AsyncSession, query_vector: list[float], k: int) -> list[SearchResult]:
-    """Ejecuta la búsqueda y devuelve los resultados ya tipados."""
+    """Ejecuta la búsqueda y devuelve los resultados ya tipados.
+
+    Desde la sesión 10 es la rama vectorial del pipeline de recuperación: `score` es la similitud coseno
+    (1 − distancia) y `ranking.vector_rank` la posición en esta rama, que es lo que consume la fusión RRF.
+    """
     rows = (await session.execute(build_search_statement(query_vector, k))).all()
     return [
         SearchResult(
@@ -163,7 +167,9 @@ async def search_chunks(session: AsyncSession, query_vector: list[float], k: int
             chunk_type=row.chunk_type,
             content=row.content,
             distance=float(row.distance),
+            score=1.0 - float(row.distance),
+            ranking=RankSignals(vector_rank=position),
             metadata=row.chunk_metadata or {},
         )
-        for row in rows
+        for position, row in enumerate(rows, start=1)
     ]

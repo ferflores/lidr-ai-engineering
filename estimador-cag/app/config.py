@@ -23,6 +23,13 @@ load_dotenv(ENV_FILE)
 
 Provider = Literal["openai", "anthropic"]
 
+# Session 10: the two retrieval switches. Defined here (not in the retrieval package) so that schemas,
+# settings and the retrieval code can all import them without a circular import through the package.
+SearchMode = Literal["vector", "hybrid"]
+# Multilingual MiniLM cross-encoder trained on mMARCO (Spanish included): the project's real inputs are
+# Spanish meeting transcripts, even though the sample corpus is English. 118 M parameters, ~0.5 GB.
+DEFAULT_RERANKER_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+
 
 class Settings(BaseSettings):
     """Variables de entorno del proyecto (ver `.env.example`)."""
@@ -174,6 +181,36 @@ class Settings(BaseSettings):
             return url
         user = credentials.partition(":")[0]
         return f"{scheme}://{user}@{location}"
+
+    # --- Retrieval: hybrid search + reranking (session 10 pre-work) ------------------------------------
+    # The four configurations of the exercise are the cross product of `search_mode` and `rerank_enabled`.
+    # These are the service defaults; a request to POST /search can override either (`mode`, `rerank`), which
+    # is how evals/retrieval/run.py measures A, B, C and D against one running service.
+    # The defaults are configuration B, the one the measurement recommends (README, "Búsqueda híbrida y
+    # reranking"; evals/retrieval/REPORT.md): hybrid costs ~9 ms over vector-only and is the only branch that
+    # sees exact technical tokens; reranking tripled the latency (+600-780 ms on CPU) and lowered precision@5
+    # on this corpus with two different cross-encoders. The switch stays one env var away.
+    search_mode: SearchMode = Field(
+        default="hybrid",
+        description="vector: cosine distance only. hybrid: cosine + PostgreSQL full-text fused with Reciprocal Rank Fusion.",
+    )
+    search_candidates: int = Field(
+        default=50, ge=1, le=500,
+        description="Recall width of each branch before fusion and reranking (recall-then-rerank: top-N -> top-k).",
+    )
+    rrf_k: int = Field(default=60, ge=0, description="Smoothing constant of Reciprocal Rank Fusion: score = sum(1 / (k + rank)).")
+    rerank_enabled: bool = Field(
+        default=False,
+        description="Default for the `rerank` switch of POST /search: reorder the recalled candidates with the cross-encoder.",
+    )
+    rerank_model: str = Field(default=DEFAULT_RERANKER_MODEL, description="sentence-transformers CrossEncoder model name.")
+    rerank_batch_size: int = Field(default=32, ge=1, description="Query-document pairs per forward pass.")
+    rerank_max_length: int = Field(default=512, ge=16, description="Token limit per pair; longer pairs are truncated.")
+    rerank_device: str = Field(default="cpu", description="Torch device for the cross-encoder (cpu, cuda, mps). cpu is the production reference.")
+    rerank_preload: bool = Field(
+        default=True,
+        description="Load the model at startup when RERANK_ENABLED=true, so the first request does not pay the cold start.",
+    )
 
     # --- Parámetros del modelo ---------------------------------------------
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)

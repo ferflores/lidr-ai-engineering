@@ -8,11 +8,15 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     PYTHONUNBUFFERED=1 \
-    TIKTOKEN_CACHE_DIR=/app/.tiktoken
+    TIKTOKEN_CACHE_DIR=/app/.tiktoken \
+    HF_HOME=/app/.hf \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    TOKENIZERS_PARALLELISM=false
 
 WORKDIR /app
 
-# 1) Solo las dependencias, para que esta capa se cachee mientras no cambie uv.lock
+# 1) Solo las dependencias, para que esta capa se cachee mientras no cambie uv.lock.
+#    Incluye sentence-transformers + PyTorch solo CPU (uv.lock fija el índice `cpu` de PyTorch para Linux).
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
@@ -20,6 +24,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 1b) El tokenizador que usa el chunker de embeddings (tiktoken, cl100k_base) se descarga en el build y queda
 #     en la imagen: el contenedor no necesita red para contar tokens ni falla si la descarga no está disponible.
 RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.encoding_for_model('text-embedding-3-small')"
+
+# 1c) Pre-work sesión 10: el modelo del reranker (cross-encoder, ~0,5 GB) se descarga en el build a HF_HOME y
+#     queda en la imagen por la misma razón que el tokenizador: el contenedor arranca sin red y sin esperar la
+#     descarga, y `python -m app.embedding_pipeline.retrieval.verify_reranker` prueba la carga, no la red.
+#     Si se cambia RERANK_MODEL en el .env, el modelo nuevo se descargará en el primer arranque.
+ARG RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+RUN /app/.venv/bin/python -c "from sentence_transformers import CrossEncoder; CrossEncoder('${RERANKER_MODEL}', device='cpu')"
 
 # 2) El código: API (app/), plantillas de prompt (prompts/), interfaz (streamlit_app.py + .streamlit/config.toml),
 #    scripts/, data/ y las migraciones de Alembic,
@@ -38,6 +49,8 @@ COPY data ./data
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY query_examples.py ./
+# Pre-work sesión 10: el eval de recuperación (`python -m evals.retrieval.run`) también se lanza desde el contenedor.
+COPY evals ./evals
 
 # Usuario sin privilegios
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app

@@ -1,4 +1,4 @@
-# Estimador CAG — Proyecto 1 (Sesiones 02 a 07)
+# Estimador CAG — Proyecto 1 (Sesiones 02 a 10)
 
 Servicio **FastAPI** que recibe la transcripción de una reunión con un cliente más unos **parámetros
 tipados** (tarifa, tipo de proyecto, plazo, enfoque, nivel de detalle) y devuelve una **estimación de
@@ -25,6 +25,14 @@ Desde el pre-work de la **sesión 07** hay un primer paso hacia la búsqueda sem
 (`POST /embeddings/ingest`), con un chunker estructural (un componente = un chunk) y
 `text-embedding-3-small`. Los vectores se devuelven por HTTP, todavía **sin persistir**.
 Ver [Pipeline de embeddings](#pipeline-de-embeddings-pre-work-sesión-07).
+
+Desde el pre-work de la **sesión 08** los chunks viven en **PostgreSQL + pgvector** y `POST /search` los
+recupera por distancia coseno; desde el pre-work de la **sesión 10** esa búsqueda puede ser **híbrida**
+(full-text de PostgreSQL + vectorial, fusionadas con Reciprocal Rank Fusion) y pasar por un **reranker**
+(cross-encoder local, recall-then-rerank), y las cuatro configuraciones están **medidas** contra un golden set
+anotado a mano: precisión@5 y latencia en [`evals/retrieval/REPORT.md`](evals/retrieval/REPORT.md).
+Ver [Persistencia en PostgreSQL + pgvector](#persistencia-en-postgresql--pgvector-pre-work-sesión-08) y
+[Búsqueda híbrida y reranking](#búsqueda-híbrida-y-reranking-pre-work-sesión-10).
 
 Además, cuatro piezas que el curso enseñó y el proyecto no tenía (ver
 [Huecos del curso, cerrados](#huecos-del-curso-cerrados)): **salida estructurada** validada con Pydantic,
@@ -1050,13 +1058,257 @@ El enunciado reserva cuatro temas para la sesión en vivo y ninguno está aquí:
 IVFFlat), **filtros por metadata** en el `WHERE` (la metadata ya está en JSONB con GIN, pero el endpoint no
 filtra), **búsqueda híbrida** (full-text + vector) y **tuning** de `shared_buffers`, `maintenance_work_mem` o
 `ef_search` (todo en valores por defecto). El test `test_search_statement_uses_the_cosine_operator_ordered_and_limited`
-comprueba incluso que la consulta **no lleva `WHERE`**.
+comprueba incluso que la consulta vectorial **no lleva `WHERE`**. (La búsqueda híbrida llegó después, con el
+pre-work de la sesión 10, como una rama aparte que se fusiona con esta; la consulta vectorial sigue igual.)
 
 Lo que sí se añadió sobre el mínimo, y por qué: el **503** cuando Postgres no responde (sin él, una base caída
 devolvía un 500 genérico indistinguible de un fallo del embedder), el **rollback explícito** ante un fallo del
 embedder (es lo que hace cierta la atomicidad que pide el enunciado, y hay un test que lo comprueba), y
 `scripts/ingest_corpus.py` (el contrato es un documento por petición, así que ingestar el corpus del curso son
 15 llamadas; hacerlas a mano con `curl` no era razonable).
+
+## Búsqueda híbrida y reranking (pre-work sesión 10)
+
+El problema que ataca este pre-work: en el espacio vectorial, *cercano* no es *relevante*. Una consulta que
+describe una tienda online puede recuperar el presupuesto de una pasarela de pagos porque comparte "tarjeta" y
+"checkout", y ese presupuesto no sirve para estimar una tienda. Dos técnicas contra eso, **búsqueda híbrida**
+(sumar una rama de palabras clave a la vectorial) y **reranking** (reordenar los candidatos con un
+cross-encoder que lee consulta y chunk juntos), y, sobre todo, la **medición** de si compensan: las cuatro
+configuraciones A-D contra un golden set anotado a mano, con precisión@5 y latencia por etapa. El resultado
+real está en [`evals/retrieval/REPORT.md`](evals/retrieval/REPORT.md) y la lectura, abajo.
+
+### Puesta en marcha
+
+```bash
+uv sync                                   # trae sentence-transformers + PyTorch (solo CPU en Linux: uv.lock fija el índice cpu)
+docker compose up -d                      # Postgres + API (la imagen lleva el modelo del reranker; pesa 1,9 GB)
+docker compose run --rm api alembic upgrade head          # migración 0002: columna tsvector generada + GIN
+docker compose exec api python -m app.embedding_pipeline.retrieval.verify_reranker   # el modelo carga y ordena bien → PASS
+
+# Desarrollo con uv run contra el Postgres de compose:
+uv run alembic upgrade head
+uv run python -m app.embedding_pipeline.retrieval.verify_reranker
+uv run uvicorn app.main:app --reload
+```
+
+Dos avisos respecto al enunciado. El servicio se llama **`api`**, no `ai-service`. Y el repo oficial
+`LIDR-academy/ai-engineering` devuelve 404 para mi cuenta (comprobado con `gh repo view` el 2026-11-09), así
+que el wrapper del cross-encoder no se pudo "sacar de la rama session-10": está construido aquí
+(`app/embedding_pipeline/retrieval/reranker.py`) con la misma forma que describe el enunciado (carga del
+modelo, scoring de pares consulta-documento) y su `verify_reranker`.
+
+`verify_reranker` carga el modelo y puntúa tres pares con el caso del enunciado: una consulta de tienda online
+contra un chunk de e-commerce (relevante), uno de pasarela de pagos (el vecino inútil) y uno de telemetría
+industrial. Pasa si el de e-commerce queda primero y el de telemetría último. Resultado real en este Mac y
+dentro del contenedor: `4.28 / -9.46 / -9.80` (logits), PASS; carga 46 s la primera vez (descarga de 0,5 GB)
+y 6 s después.
+
+### Qué hay y por qué está así
+
+**1. Full-text en PostgreSQL** (`alembic/versions/0002_chunks_fulltext.py`). `chunks.content_tsv` es una
+columna **generada y almacenada** (`GENERATED ALWAYS AS (to_tsvector('english'::regconfig, content)) STORED`)
+con índice **GIN**. Generada, para que nunca pueda desincronizarse de `content` (la aplicación no la escribe);
+almacenada, porque Postgres solo indexa columnas generadas almacenadas. La configuración es **`english`** y no
+`spanish` aunque el enunciado diga que el dataset está en español: eso describe el dataset del repo oficial, y
+este corpus (`data/budgets_sample.json`, resúmenes, nombres y descripciones de componentes) está escrito en
+inglés, igual que el texto que el chunker construye alrededor. La configuración manda en el *stemming* y en las
+*stop words*, así que tiene que seguir al idioma del contenido: con `spanish`, "payments" y "payment" no se
+reducirían al mismo lexema y "the", "with", "for" se indexarían como si significaran algo. La consulta se
+normaliza con la misma configuración en el momento de buscar. La constante vive en `app.db.models` y en la
+migración (duplicada a propósito: una migración es un registro histórico) y un test comprueba que coinciden.
+
+**2. Rama léxica y fusión RRF** (`retrieval/lexical.py`, `retrieval/fusion.py`). La rama de palabras clave
+construye la tsquery con `plainto_tsquery` y **cambia cada `&` por `|`**: con semántica AND (lo que dan
+`plainto_tsquery` y `websearch_to_tsquery`) una descripción de proyecto de 20-30 palabras no casa con ningún
+chunk de 60. Está medido: las cinco consultas del golden set devuelven **0 filas con AND** y entre 34 y 59 de
+los 73 chunks con OR. El orden lo da `ts_rank_cd` normalizado por longitud (sin la normalización, el chunk más
+largo del corpus, una descripción de 130 palabras, ganaba a chunks más cortos con los mismos términos) y el
+`WHERE content_tsv @@ query` es lo que permite a Postgres usar el GIN. Las dos ramas se fusionan con
+**Reciprocal Rank Fusion**: `score(d) = Σ 1 / (k + rank_rama(d))`, `k = 60` (el del paper original,
+configurable con `RRF_K`). RRF y no una suma ponderada de puntuaciones porque las dos ramas puntúan en escalas
+sin relación (una distancia coseno en [0, 2] y un `ts_rank_cd` sin cota) y normalizarlas es frágil; RRF solo
+mira la posición y premia que las dos ramas coincidan sin ningún peso que ajustar. La función es pura
+(`reciprocal_rank_fusion`), con desempate determinista, y la fusión conserva en cada resultado la posición que
+tuvo en cada rama (`ranking.vector_rank`, `ranking.lexical_rank`, `ranking.rrf_score`): la respuesta explica
+por qué cada chunk está donde está.
+
+**3. Reranker** (`retrieval/reranker.py`, `retrieval/service.py`). Patrón **recall-then-rerank**: la
+recuperación (vectorial o híbrida) trae `SEARCH_CANDIDATES` = 50 candidatos, el cross-encoder puntúa los 50
+pares (consulta, chunk) en un solo lote y se devuelven los k = 5 mejores. El wrapper carga el modelo
+**perezosamente** (importar `sentence-transformers` y torch cuesta segundos; el servicio arranca igual de
+rápido con el reranking apagado), acepta un *scorer* inyectado para los tests, fija el dispositivo a **CPU** (es
+lo que tiene el contenedor; medir en la GPU del portátil daría números que el servidor nunca verá) y trata
+igual los empates (conserva el orden del recall). El modelo por defecto es
+`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (118 M de parámetros, multilingüe, entrenado en mMARCO con
+español): el corpus de muestra es inglés, pero las entradas reales del proyecto son transcripciones en español
+(sesión 09), y el modelo es una variable de entorno (`RERANK_MODEL`), no una constante. La imagen Docker lo
+descarga en el *build* a `HF_HOME=/app/.hf`, por la misma razón que el tokenizador de tiktoken: el contenedor
+arranca sin red. Si falla la carga, `POST /search` con reranking devuelve **500** con el detalle y la búsqueda
+sin reranking sigue funcionando.
+
+**Los interruptores.** Dos ajustes (`SEARCH_MODE=vector|hybrid`, `RERANK_ENABLED=true|false`) fijan el
+comportamiento por defecto del servicio, y la petición puede sobrescribir cualquiera de los dos (`mode`,
+`rerank` en el body de `POST /search`). Así las cuatro configuraciones se invocan de forma reproducible contra
+**un mismo servicio en marcha**, sin reiniciar ni tocar código:
+
+| Config | Búsqueda | Reranking | Body de `POST /search` |
+|---|---|---|---|
+| A | Vectorial | No | `{"query": "...", "k": 5, "mode": "vector", "rerank": false}` |
+| B | Híbrida | No | `{"query": "...", "k": 5, "mode": "hybrid", "rerank": false}` |
+| C | Vectorial | Sí | `{"query": "...", "k": 5, "mode": "vector", "rerank": true}` |
+| D | Híbrida | Sí | `{"query": "...", "k": 5, "mode": "hybrid", "rerank": true}` |
+
+La respuesta dice qué pasó (`mode`, `reranked`, `candidates`) y **cuánto costó cada etapa** (`timings`:
+`embedding_ms`, `vector_ms`, `lexical_ms`, `fusion_ms`, `rerank_ms`, `total_ms`), que es lo que permite
+separar el coste del reranking del de la llamada de embeddings, idéntica en las cuatro. `GET /health` expone
+`search_mode`, `rerank_enabled`, `rerank_model` y si el modelo está cargado en memoria; con
+`RERANK_ENABLED=true` el modelo se precarga al arrancar (`RERANK_PRELOAD`) para que la primera petición no
+pague el arranque en frío.
+
+### El golden set, dos veces
+
+[`evals/retrieval/golden_set.json`](evals/retrieval/golden_set.json): cinco descripciones de proyecto a
+estimar, cada una con los presupuestos del dataset que **de verdad** sirven como referencia, anotados a mano
+**antes** de ejecutar nada, leyendo los quince presupuestos componente a componente. Relevancia binaria a
+nivel de presupuesto (un chunk es relevante si su `budget_id` está en la lista), criterio estricto (un
+presupuesto es relevante si un estimador lo abriría como referencia para la mayoría de los componentes, no por
+compartir sector o un componente suelto), y cada consulta documenta además sus **distractores**: los
+presupuestos que se parecen pero despistarían la estimación.
+
+| Consulta | Lo que describe | Relevantes | La trampa |
+|---|---|---|---|
+| `pharmacy-online-orders` | Cadena de farmacias que vende online: catálogo, pago con tarjeta, entrega o recogida en farmacia, puntos de fidelidad | BUD-2024-021, BUD-2022-004, BUD-2025-008 (las tres tiendas B2C) | "farmacia" tira del sector healthcare (clínica dental, telemedicina con recetas electrónicas); es retail |
+| `credit-card-onboarding-tool` | Herramienta interna de sucursales bancarias para abrir solicitudes de tarjeta de crédito: identidad, buró, firma en tableta, seguimiento | BUD-2023-007 (originación de préstamos) | "credit card" apunta a la pasarela de pagos (tokenización, 3DS); "bank" a la API de banca móvil |
+| `van-fleet-tracking` | 300 furgonetas con GPS: mapa en vivo, alertas por desvío o parada larga, histórico por vehículo | BUD-2023-025 (IoT: telemetría, alertas, dashboard de flota) y BUD-2024-009 (última milla: rutas, GPS) | la captura de datos de máquinas del MES; el almacén con escáneres |
+| `plant-oee-sap` | 25 máquinas de una planta: OEE y paradas por turno, codificación de causas, cifras diarias a SAP | BUD-2024-030 (MES) | "SAP" casa literalmente con la integración SAP Business One de un marketplace B2B |
+| `insurance-customer-portal` | Portal de clientes de una correduría: pólizas y facturas, firma electrónica de renovaciones, SMS al publicar documentos | BUD-2024-002 y BUD-2025-011 (los dos portales de documentos; no hay seguros en el corpus) | la firma digital y la exportación GDPR de la telemedicina; la firma de contratos del préstamo |
+
+Es el **segundo** golden set. El primero, conservado en
+[`golden_set_paraphrases.json`](evals/retrieval/golden_set_paraphrases.json) con sus resultados en
+[`REPORT_paraphrases.md`](evals/retrieval/REPORT_paraphrases.md), parafraseaba el resumen de un presupuesto por
+consulta ("tienda de moda con catálogo, buscador, carrito y checkout con tarjeta") y la búsqueda vectorial a
+secas sacó **precisión@5 = 1,00 en las cinco consultas**: con 15 presupuestos y la cabecera del proyecto padre
+en cada chunk, la paráfrasis de un resumen la encuentra el embedding solo, y un golden set en el que todas las
+configuraciones sacan 1,00 no distingue nada. Las cinco consultas definitivas se escribieron para que ningún
+presupuesto sea gemelo de la consulta, para que los presupuestos útiles estén en otro sector del que sugieren
+las palabras, o para que un término exacto apunte al presupuesto equivocado. Anotadas también antes de
+ejecutar. Las consultas están en inglés, el idioma del corpus: la sesión 09 midió que el salto de idioma solo
+cuesta ~0,09 de distancia coseno, y la reformulación de consultas queda fuera de este ejercicio, así que el
+golden set aísla la pregunta de la recuperación de la del idioma.
+
+### Resultados
+
+[`evals/retrieval/run.py`](evals/retrieval/run.py) lanza las cuatro configuraciones por el endpoint público,
+repite cada consulta cinco veces (más una de calentamiento por configuración que no cuenta), calcula la
+precisión@5 sobre los `budget_id` de los chunks devueltos y resume la latencia del servidor con mediana y p95.
+Medido el 2026-11-09 en este Mac (Apple Silicon, torch en CPU) con `uv run uvicorn`, el corpus del curso
+(15 presupuestos, 73 chunks) y `text-embedding-3-small`:
+
+| Configuración | Búsqueda | Reranking | Precisión@5 | Presupuestos relevantes encontrados@5 | Latencia (mediana) | p95 | de la cual: embedding | SQL vector | SQL full-text | rerank (50 pares) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **A** | Vectorial | No | **0,96** | 0,87 | **233 ms** | 296 ms | 222 ms | 12 ms | — | — |
+| **B** | Híbrida | No | 0,92 | 0,87 | 266 ms | 358 ms | 238 ms | 13 ms | 10 ms | — |
+| **C** | Vectorial | Sí | 0,80 | 0,83 | 951 ms | 1150 ms | 275 ms | 14 ms | — | 575 ms |
+| **D** | Híbrida | Sí | 0,80 | 0,83 | 990 ms | 1118 ms | 241 ms | 12 ms | 9 ms | 745 ms |
+
+Precisión@5 por consulta (la que explica la tabla):
+
+| Consulta | A | B | C | D |
+|---|---|---|---|---|
+| pharmacy-online-orders | 1,00 | 1,00 | 1,00 | 1,00 |
+| credit-card-onboarding-tool | 1,00 | 0,80 | **0,40** | **0,40** |
+| van-fleet-tracking | 1,00 | 1,00 | 1,00 | 1,00 |
+| plant-oee-sap | 1,00 | 1,00 | 1,00 | 1,00 |
+| insurance-customer-portal | 0,80 | 0,80 | 0,60 | 0,60 |
+
+Dos comprobaciones más, para no concluir sobre un solo modelo ni un solo golden set:
+
+- Con el cross-encoder inglés y pequeño `cross-encoder/ms-marco-MiniLM-L-6-v2` (22 M de parámetros,
+  `RERANK_MODEL` en el entorno, nada más), [`REPORT_minilm_l6.md`](evals/retrieval/REPORT_minilm_l6.md):
+  C y D sacan **0,84** de precisión@5 con **306-363 ms** de reranking. Fallan **las mismas dos consultas**
+  (0,60 cada una).
+- Con el golden set de paráfrasis ([`REPORT_paraphrases.md`](evals/retrieval/REPORT_paraphrases.md)): A, C y D
+  1,00, B 0,96; el reranking cuesta 495-573 ms y no cambia nada, porque no había nada que corregir.
+
+### Lectura
+
+- **La llamada de embeddings es el 85-95 % de la latencia sin reranking.** 222-238 ms de los 233-266 ms son el
+  viaje a la API de OpenAI; el SQL (sin índice vectorial, *sequential scan* de 73 filas) son 12 ms y la rama
+  full-text otros 10. Cualquier optimización de la búsqueda en sí es ruido frente a ese viaje; lo que mueve la
+  aguja es cachear embeddings de consultas o embeber en local.
+- **La híbrida cuesta 10 ms y, en este corpus, no gana nada medible.** En tres consultas devuelve exactamente
+  los mismos chunks que A en otro orden; en dos mete un chunk en la quinta posición por coincidencias de
+  palabras genéricas (los conectores PSD2 de la banca móvil porque "bank" aparece tres veces; la agenda y
+  facturación de la telemedicina por "invoices"/"billing"), de ahí el 0,92. La semántica OR sobre un brief de 30
+  palabras casa con la mitad del corpus, y `ts_rank_cd` premia densidad de términos, no rareza; RRF con k = 60
+  da a la posición 3 léxica casi el mismo peso que a la 3 vectorial. El ajuste obvio (pesar las ramas o exigir
+  dos términos) queda para el directo: afinarlo contra estas cinco consultas sería sobreajustar el eval. A favor
+  de la híbrida, dos cosas que la tabla no muestra: la rama léxica es la **única que ve nombres propios
+  técnicos** (SAP, HL7, WooCommerce, Stripe), y esos tokens **sobreviven al cambio de idioma**: con un brief en
+  español ("tienda online de una panadería con WooCommerce, suscripciones, pagos con Stripe y Bizum") la rama
+  léxica casa `woocommerc`, `stripe` y `bizum` y sube la migración WooCommerce de la posición 4 a la 2.
+- **El reranking multiplica la latencia por 3-4 y baja la precisión.** +575-745 ms por consulta para pasar de
+  0,96 a 0,80. No es un fallo de implementación ni de un modelo: dos cross-encoders distintos se equivocan en
+  las mismas dos consultas y de la misma manera. En `credit-card-onboarding-tool` el reranker sube el panel de
+  comerciantes y los webhooks de la **pasarela de pagos** (el texto habla de "card") y los conectores PSD2 del
+  **banco** por encima del motor de scoring y la firma del contrato del presupuesto de préstamos, que es el
+  relevante pero dice "loan". En `insurance-customer-portal` sube la agenda y facturación y las recetas
+  electrónicas de la telemedicina ("sign", "invoicing"). Es exactamente la trampa del enunciado, y el
+  cross-encoder cae en ella **más** que el bi-encoder. La razón es qué aprendió cada uno: un cross-encoder
+  entrenado en MS MARCO mide si *este pasaje responde a esta pregunta*, y un chunk sobre tarjetas responde,
+  literalmente, a una pregunta sobre tarjetas. Lo que necesita el estimador es otra cosa: *qué presupuesto se
+  parece en estructura y componentes al proyecto nuevo*, y esa noción la captura mejor el embedding del chunk
+  con la cabecera de su proyecto padre (decisión del chunker de la sesión 07) que la lectura literal del par.
+- **Con 73 chunks no hay problema de recall que resolver.** El top-50 es el 68 % del corpus: el reranker no
+  rescata nada que la primera etapa dejara fuera, solo reordena casi todo el corpus con otro criterio. El
+  patrón recall-then-rerank está pensado para corpus donde el top-50 es el 0,1 %, y ahí la primera etapa sí
+  pierde cosas que la segunda puede salvar.
+
+### Conclusiones
+
+En el proyecto, hoy, usaría la **configuración B (híbrida sin reranking)**, y así quedan los valores por
+defecto del servicio (`SEARCH_MODE=hybrid`, `RERANK_ENABLED=false`). A y B empatan en latencia (la llamada de
+embeddings manda en las dos) y su diferencia de precisión es un chunk en 25 (0,04), dentro de lo que un golden
+set de cinco consultas puede resolver; elijo B porque la rama léxica cuesta 10 ms y es la única que ve los
+nombres propios técnicos, también cuando el brief llega en español, que es el caso real de este proyecto. El
+reranking **no** justifica su latencia en este caso de uso: triplica el tiempo de respuesta (+575-745 ms en
+CPU; +306-363 ms con el modelo pequeño) para **perder** precisión, con dos modelos distintos, porque la
+relevancia que aprendió un cross-encoder de MS MARCO (¿este pasaje responde a esta pregunta?) no es la
+relevancia que necesita un estimador (¿este presupuesto se parece al proyecto nuevo?), y porque con 73 chunks
+no hay un problema de recall que el patrón recall-then-rerank venga a resolver. Cambiaría de opinión con tres
+cosas, y el *harness* está listo para volver a medir cuando pasen: un corpus de cientos de presupuestos (donde
+el top-50 sí deja fuera cosas), consultas en español reformuladas antes de buscar (la pieza que la sesión 09
+señaló como la primera a atacar) y un reranker que mida la relevancia correcta, sea un cross-encoder afinado
+con pares "este presupuesto sirvió para estimar este proyecto" o un LLM leyendo los diez primeros con esa
+pregunta explícita.
+
+### Reproducir
+
+```bash
+# API en marcha con el corpus ingestado (docker compose up -d && alembic upgrade head && scripts/ingest_corpus.py)
+uv run python -m evals.retrieval.run --http http://localhost:8000 --repetitions 5 \
+  --output evals/retrieval/results.csv --report evals/retrieval/REPORT.md
+docker compose run --rm api python -m evals.retrieval.run --repetitions 5        # desde el contenedor (API_BASE_URL=http://api:8000)
+
+# Solo dos configuraciones, otro golden set, otro modelo de reranking
+uv run python -m evals.retrieval.run --configs C,D --golden evals/retrieval/golden_set_paraphrases.json
+RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2 uv run uvicorn app.main:app   # y después --configs C,D
+```
+
+El CSV lleva una fila por petición (configuración, consulta, repetición, precisión, recall de presupuestos y los
+tiempos por etapa) y el reporte, la tabla comparativa, la precisión por consulta y el top-5 de cada
+configuración anotado contra el golden set con las señales de cada rama. Los tests
+(`tests/test_retrieval.py`, 23) cubren RRF, el SQL de la rama léxica, la coherencia migración-modelo, el
+wrapper con un *scorer* falso, las cuatro configuraciones por el endpoint con un doble de sesión que distingue
+las dos consultas SQL, el 500 cuando el modelo no carga y las métricas del eval, sin Postgres, sin modelo y sin
+créditos.
+
+### Lo que no se hizo, por disciplina de scoping
+
+Ni expansión de consultas, ni routing multi-índice, ni filtrado por metadatos: el enunciado los reserva para el
+directo. Tampoco se pesaron las ramas de RRF ni se paralelizaron (las dos consultas SQL van en serie sobre la
+sesión de la petición: con 73 chunks son 20 ms juntas), ni se añadió el índice HNSW (sigue siendo el baseline
+de la sesión 08).
 
 ## Huecos del curso, cerrados
 
@@ -1471,6 +1723,19 @@ Checklist del pre-work de la sesión 07:
 - [x] Sección del README justificando las cuatro decisiones (dos tablas, JSONB, coseno, sin índice)
 - [x] Sin índices vectoriales, sin filtros por metadata, sin híbrida y sin tuning (lo comprueban el test y `verificar.sh`)
 - [x] Extra (no exigido): 34 tests de persistencia y búsqueda sin Postgres ni créditos (`tests/test_vector_store.py`)
+
+### Pre-work sesión 10 (búsqueda híbrida y reranking)
+
+- [x] `verify_reranker` descarga y carga el modelo y ordena bien los tres pares (en local y dentro del contenedor)
+- [x] Migración `0002_chunks_fulltext`: columna `tsvector` **generada** a partir de `content` con índice **GIN**, configuración `english` justificada por el idioma real del corpus
+- [x] Rama léxica sobre `content_tsv` (OR, `ts_rank_cd` normalizado, `@@` para el GIN) y fusión **RRF** con `k` configurable (`RRF_K`): una función de búsqueda híbrida que devuelve un ranking único
+- [x] Reranker integrado con **recall-then-rerank** (top-50 → top-5), activable y desactivable sin tocar código (`RERANK_ENABLED` o `rerank` en la petición)
+- [x] Las cuatro configuraciones A-D invocables de forma reproducible contra un mismo servicio (`mode` + `rerank`) y con `evals/retrieval/run.py`
+- [x] Golden set de 5 consultas del dominio anotado a mano (`golden_set.json`), más el primero, saturado, conservado como evidencia
+- [x] Tabla comparativa con precisión@5 y latencia (mediana, p95 y por etapa) de A, B, C y D en `evals/retrieval/REPORT.md` y en este README
+- [x] Conclusiones: qué configuración y por qué; si la latencia del reranking se justifica (no, y por qué)
+- [x] Código, nombres, comentarios y logs nuevos en inglés
+- [x] Extra (no exigido): 23 tests sin Postgres, sin modelo y sin créditos (`tests/test_retrieval.py`); el CI comprueba la columna generada, el GIN, `verify_reranker` en el contenedor y las cuatro configuraciones por HTTP
 
 ## Decisiones de diseño
 

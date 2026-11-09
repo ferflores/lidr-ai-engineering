@@ -1,0 +1,79 @@
+{
+  "description": "FIRST golden set (kept as evidence, not the one the report uses): five queries that paraphrase the summary of one budget each. Measured on 2026-11-09, every configuration scored precision@5 = 1.00 on four of the five queries and the vector baseline 1.00 on all five: with 15 budgets and the parent-project header in every chunk, a paraphrase of a budget's own summary is found by the embedding alone, so this set cannot tell the configurations apart. golden_set.json replaces it with client briefs that have no one-to-one budget. Relevance is binary at budget level, annotated by hand before running anything.",
+  "annotated_on": "2026-11-09",
+  "annotation_notes": [
+    "Queries are written in English, the language of the corpus. The project's real inputs are Spanish transcripts; session 09 showed that language mismatch alone costs ~0.09 of cosine distance, and query reformulation is out of scope for this exercise, so the golden set isolates the retrieval question from the language question.",
+    "Annotation was done before running any configuration, reading the fifteen budgets component by component. Strict criterion: a budget is relevant when an estimator would open it as a reference for most of the project's components, not when it merely shares the sector.",
+    "Queries were written with natural domain vocabulary; some of it happens to match component names exactly (OEE, proof of delivery, credit scoring, reminders, returns), which is what gives the lexical branch something to contribute."
+  ],
+  "k": 5,
+  "queries": [
+    {
+      "id": "fashion-online-store",
+      "query": "Online store for a fashion brand: product catalogue with sizes and colours, search with filters, shopping cart, card payments at checkout and order management with returns.",
+      "relevant_budget_ids": [
+        "BUD-2024-021",
+        "BUD-2022-004",
+        "BUD-2025-008"
+      ],
+      "rationale": "BUD-2024-021 is the same project (headless fashion storefront: catalog, search, cart + Stripe, storefront, orders and returns). BUD-2022-004 (mobile shopping app with in-app payments and pickup) and BUD-2025-008 (online bakery shop on WooCommerce with subscriptions) are B2C shops whose catalog, checkout and payment components are direct references.",
+      "distractors": {
+        "BUD-2025-003": "Payment gateway (card tokenisation, 3-D Secure, acquirer routing). Shares 'card payments' and 'checkout' vocabulary; it is PCI infrastructure, useless to estimate a shop. The exact confusion the exercise describes.",
+        "BUD-2023-012": "B2B marketplace (vendor onboarding, tiered pricing, quotes, SAP). Same sector label, different business model; only catalog upload and shipping overlap."
+      }
+    },
+    {
+      "id": "clinic-patient-portal",
+      "query": "Web portal for a chain of physiotherapy clinics: patients book appointments online, receive reminders before the visit and log in to see their visit history, invoices and treatment plans.",
+      "relevant_budget_ids": [
+        "BUD-2024-002",
+        "BUD-2023-016"
+      ],
+      "rationale": "BUD-2024-002 is the same project for dental clinics (booking engine, SMS/WhatsApp reminders, patient portal, clinical records sync). BUD-2023-016 (telemedicine) covers physician scheduling and booking, patient-facing records and consent: a valid reference for the booking and records parts even though video consultations are not asked for.",
+      "distractors": {
+        "BUD-2025-011": "Laboratory results portal. Same sector and the word 'portal', but the project is HL7/ASTM analyser integration and result validation; only its patient portal component is comparable."
+      }
+    },
+    {
+      "id": "courier-delivery-platform",
+      "query": "Delivery management platform for a courier company: daily route planning for the fleet, a mobile app for drivers with proof of delivery, and a tracking page where customers follow their parcel.",
+      "relevant_budget_ids": [
+        "BUD-2024-009"
+      ],
+      "rationale": "BUD-2024-009 (last-mile delivery: route optimisation, driver app with proof of delivery, customer tracking, shipper portal, invoicing) is the only logistics budget and matches component by component.",
+      "distractors": {
+        "BUD-2025-017": "Warehouse and inventory management with barcode scanning: logistics-adjacent vocabulary (shipping, picking), different problem.",
+        "BUD-2023-025": "IoT predictive maintenance with a 'fleet dashboard' of refrigeration units: shares 'fleet' and 'alerts', nothing to do with deliveries.",
+        "BUD-2022-004": "Mobile shopping app with store pickup: shares 'mobile app' and 'pickup', it is retail."
+      }
+    },
+    {
+      "id": "consumer-lending-platform",
+      "query": "Consumer lending platform: online loan application with identity verification, automated credit scoring, electronic signature of the contract and a back office for analysts to review applications.",
+      "relevant_budget_ids": [
+        "BUD-2023-007"
+      ],
+      "rationale": "BUD-2023-007 (loan origination: KYC onboarding, credit scoring engine, contract e-signature, disbursement, back-office portal) is the same project.",
+      "distractors": {
+        "BUD-2024-014": "Mobile banking API (OAuth, PSD2 connectors, accounts). Same sector, different product.",
+        "BUD-2022-019": "Robo-advisor: the MiFID suitability questionnaire resembles 'onboarding', the rest is portfolio management.",
+        "BUD-2025-003": "Payment gateway: finance vocabulary, unrelated to lending.",
+        "BUD-2023-016": "Telemedicine: 'digital signature by the physician' is a lexical trap for 'electronic signature'."
+      }
+    },
+    {
+      "id": "factory-oee-monitoring",
+      "query": "Plant monitoring system for a food factory: capture machine and sensor data from the shop floor, compute OEE per line and shift, and alert the maintenance team when a machine shows anomalies.",
+      "relevant_budget_ids": [
+        "BUD-2024-030",
+        "BUD-2023-025"
+      ],
+      "rationale": "BUD-2024-030 (MES for a steel plant: shop-floor data acquisition, OEE and downtime dashboards, maintenance requests) matches the monitoring and OEE parts; BUD-2023-025 (IoT telemetry ingestion, anomaly detection and alerting with technician dispatch) matches the sensor and alerting parts. An estimator would use both.",
+      "distractors": {
+        "BUD-2025-017": "Warehouse management for a packaging manufacturer: same 'industrial' sector label, nothing about machines, OEE or sensors.",
+        "BUD-2024-009": "Last-mile delivery: shares 'alerts/notifications' and 'live tracking' vocabulary."
+      }
+    }
+  ],
+  "superseded_by": "golden_set.json"
+}

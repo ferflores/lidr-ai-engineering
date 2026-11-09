@@ -145,7 +145,8 @@ def test_metadata_columns_are_named_metadata_despite_the_python_attribute():
     declarativas (`Base.metadata`), así que el atributo Python es otro y el mapeo es explícito."""
     assert Document.__table__.c.keys() == ["id", "source_path", "document_type", "ingested_at", "metadata"]
     assert Document.doc_metadata.property.columns[0].name == "metadata"
-    assert Chunk.__table__.c.keys() == ["id", "document_id", "chunk_type", "content", "embedding", "metadata", "created_at"]
+    # `content_tsv` llegó con la sesión 10 (migración 0002): la columna generada de la rama full-text.
+    assert Chunk.__table__.c.keys() == ["id", "document_id", "chunk_type", "content", "embedding", "content_tsv", "metadata", "created_at"]
     assert Chunk.chunk_metadata.property.columns[0].name == "metadata"
 
 
@@ -178,6 +179,7 @@ def test_expected_indexes_exist_and_metadata_uses_gin():
         "ix_chunks_document_id",
         "ix_chunks_chunk_type",
         "ix_chunks_metadata_gin",
+        "ix_chunks_content_tsv_gin",  # sesión 10: GIN sobre el tsvector de la rama full-text
     }
     gin = next(i for i in Chunk.__table__.indexes if i.name == "ix_chunks_metadata_gin")
     assert gin.dialect_options["postgresql"]["using"] == "gin"

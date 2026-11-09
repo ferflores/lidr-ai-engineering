@@ -5,12 +5,17 @@ Arranque en desarrollo:
 """
 
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+import structlog
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from app.config import Settings, get_settings
+from app.embedding_pipeline.retrieval import RerankerUnavailable
+from app.embedding_pipeline.router import get_reranker
 from app.embedding_pipeline.router import router as embeddings_router
 from app.embedding_pipeline.router import search_router
 from app.routers import estimations, sessions
@@ -19,6 +24,22 @@ from app.services.sessions import get_session_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 configure_logging(get_settings())  # structlog: un evento `turn_observed` por turno (JSON en stdout)
+
+log = structlog.get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Startup: pre-load the cross-encoder when reranking is on by default, so the first `POST /search` does
+    not pay the model's cold start (seconds). A failed load is logged, not fatal: vector search keeps working
+    and a request that asks for reranking gets a 500 with the reason."""
+    settings = get_settings()
+    if settings.rerank_enabled and settings.rerank_preload:
+        try:
+            await run_in_threadpool(get_reranker(settings).load)
+        except RerankerUnavailable as exc:
+            log.error("reranker_preload_failed", model=settings.rerank_model, detail=str(exc))
+    yield
 
 DESCRIPTION = """
 Servicio que recibe la **transcripción de una reunión** con un cliente más unos
@@ -51,8 +72,12 @@ del presupuesto padre), lo vectoriza con `text-embedding-3-small` por lotes y **
 pgvector** (`documents` + `chunks`) en una sola transacción. `POST /search` vectoriza una consulta y devuelve
 los **k chunks más cercanos por distancia coseno**, resuelto en SQL con el operador `<=>`.
 
-Todavía **sin índice vectorial** (sequential scan, el baseline del directo), sin filtros por metadata y sin
-búsqueda híbrida.
+**Búsqueda híbrida y reranking** (pre-work sesión 10): `POST /search` admite `mode=hybrid` (la rama vectorial y
+una rama **full-text de PostgreSQL** sobre la columna generada `content_tsv` se fusionan con **Reciprocal Rank
+Fusion**) y `rerank=true` (**recall-then-rerank**: los 50 candidatos recuperados se reordenan con un
+**cross-encoder** local y se devuelven los k mejores). Cada etapa viene cronometrada en `timings`.
+
+Todavía **sin índice vectorial** (sequential scan, el baseline del directo) y sin filtros por metadata.
 """
 
 settings = get_settings()
@@ -61,11 +86,12 @@ app = FastAPI(
     title=settings.app_name,
     description=DESCRIPTION,
     version=settings.app_version,
+    lifespan=lifespan,
     openapi_tags=[
         {"name": "Estimaciones", "description": "Generación de estimaciones de software con un LLM (una petición, una estimación)."},
         {"name": "Sesiones", "description": "Conversaciones multi-turno con memoria del proyecto y adjuntos."},
         {"name": "Embeddings", "description": "Chunking estructural de presupuestos JSON, embeddings y persistencia en PostgreSQL + pgvector."},
-        {"name": "Búsqueda semántica", "description": "Recuperación de los k chunks más cercanos a una consulta por distancia coseno (pgvector)."},
+        {"name": "Búsqueda semántica", "description": "Recuperación de los k chunks más relevantes: vectorial (coseno, pgvector) o híbrida (+ full-text, RRF), con reranking opcional por cross-encoder."},
         {"name": "Sistema", "description": "Estado y diagnóstico del servicio."},
     ],
 )
@@ -89,6 +115,10 @@ class HealthResponse(BaseModel):
     embedding_model: str
     embeddings_configured: bool
     database: str = Field(description="URL de PostgreSQL sin la contraseña. No se comprueba la conexión: /health no hace E/S.")
+    search_mode: str = Field(description="Modo de búsqueda por defecto de POST /search (vector | hybrid).")
+    rerank_enabled: bool = Field(description="Si POST /search reordena con el cross-encoder por defecto.")
+    rerank_model: str
+    reranker_loaded: bool = Field(description="Si el modelo del reranker ya está cargado en memoria en este proceso.")
     timestamp: datetime
 
 
@@ -108,5 +138,9 @@ async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         embedding_model=settings.embedding_model,
         embeddings_configured=bool((settings.openai_api_key or "").strip()),
         database=settings.database_dsn_safe,
+        search_mode=settings.search_mode,
+        rerank_enabled=settings.rerank_enabled,
+        rerank_model=settings.rerank_model,
+        reranker_loaded=get_reranker(settings).is_loaded,
         timestamp=datetime.now(timezone.utc),
     )

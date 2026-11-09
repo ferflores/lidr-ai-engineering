@@ -105,20 +105,39 @@ jobs:
           test "$(docker compose exec -T postgres psql -U estimator -d estimator -tAc \
             "SELECT count(*) FROM pg_indexes WHERE tablename = 'chunks' AND indexdef LIKE '%embedding%'")" = "0"
 
-      - name: Comprobar la búsqueda semántica (sesión 08)
+      - name: Comprobar la columna full-text y el reranker (sesión 10)
+        run: |
+          # Migración 0002: tsvector GENERADA y almacenada ('s' = stored) con configuración english, y su GIN.
+          test "$(docker compose exec -T postgres psql -U estimator -d estimator -tAc \
+            "SELECT format_type(atttypid, atttypmod) || '/' || attgenerated FROM pg_attribute WHERE attrelid = 'chunks'::regclass AND attname = 'content_tsv'")" = "tsvector/s"
+          docker compose exec -T postgres psql -U estimator -d estimator -tAc \
+            "SELECT pg_get_expr(adbin, adrelid) FROM pg_attrdef WHERE adrelid = 'chunks'::regclass AND adnum = (SELECT attnum FROM pg_attribute WHERE attrelid = 'chunks'::regclass AND attname = 'content_tsv')" \
+            | grep -q "to_tsvector('english'::regconfig, content)"
+          docker compose exec -T postgres psql -U estimator -d estimator -tAc \
+            "SELECT indexdef FROM pg_indexes WHERE tablename = 'chunks' AND indexname = 'ix_chunks_content_tsv_gin'" | grep -q 'USING gin (content_tsv)'
+          # El modelo del cross-encoder está en la imagen: descarga/carga y ordena bien los tres pares de prueba.
+          docker compose exec -T api python -m app.embedding_pipeline.retrieval.verify_reranker | grep -q '^PASS'
+          curl -sf http://127.0.0.1:8000/health | grep -q '"search_mode":"hybrid"'
+
+      - name: Comprobar la búsqueda semántica e híbrida (sesiones 08 y 10)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           curl -sf http://127.0.0.1:8000/openapi.json | grep -q '"/search"'
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/search -H 'Content-Type: application/json' -d '{"query":"algo","k":0}')" = "422"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/search -H 'Content-Type: application/json' -d '{"query":"algo","mode":"keyword"}')" = "422"
           if [ -n "$OPENAI_API_KEY" ]; then
-            # Flujo real: ingesta -> 409 al repetir -> búsqueda con resultados.
+            # Flujo real: ingesta -> 409 al repetir -> búsqueda con resultados en las cuatro configuraciones.
             # El body se genera con un script por stdin (igual que ci_check_chunker.py).
             docker compose exec -T api python < scripts/ci_make_doc.py > /tmp/doc.json
             curl -sf -X POST http://127.0.0.1:8000/embeddings/ingest -H 'Content-Type: application/json' -d @/tmp/doc.json | grep -q '"chunks_created"'
             test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/embeddings/ingest -H 'Content-Type: application/json' -d @/tmp/doc.json)" = "409"
             curl -sf -X POST http://127.0.0.1:8000/search -H 'Content-Type: application/json' \
-              -d '{"query":"OAuth authentication backend for banking","k":3}' | grep -q '"distance"'
+              -d '{"query":"OAuth authentication backend for banking","k":3,"mode":"vector","rerank":false}' | grep -q '"distance"'
+            curl -sf -X POST http://127.0.0.1:8000/search -H 'Content-Type: application/json' \
+              -d '{"query":"OAuth authentication backend for banking","k":3,"mode":"hybrid","rerank":false}' | grep -q '"lexical_rank"'
+            curl -sf -X POST http://127.0.0.1:8000/search -H 'Content-Type: application/json' \
+              -d '{"query":"OAuth authentication backend for banking","k":3,"mode":"hybrid","rerank":true}' | grep -q '"rerank_score"'
           else
             echo "Sin OPENAI_API_KEY: se comprueba el contrato, no la ingesta real."
           fi

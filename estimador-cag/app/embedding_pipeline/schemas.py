@@ -22,6 +22,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.config import SearchMode
+
 Sector = Literal[
     "finance",
     "ecommerce",
@@ -157,22 +159,66 @@ class SearchRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=2000, description="Natural-language query; embedded with the same model used at ingest time.")
     # El tope de 100 no es del enunciado: evita que una petición pida medio corpus en una sola respuesta.
-    k: int = Field(default=5, ge=1, le=100, description="How many nearest chunks to return.")
+    k: int = Field(default=5, ge=1, le=100, description="How many chunks to return.")
+    # Session 10: the two switches of the exercise. `None` means "the service default" (SEARCH_MODE and
+    # RERANK_ENABLED), so one running service can be measured in all four configurations without restarts.
+    mode: SearchMode | None = Field(
+        default=None,
+        description="vector: cosine distance only. hybrid: cosine + PostgreSQL full-text, fused with Reciprocal Rank Fusion. Default: SEARCH_MODE.",
+    )
+    rerank: bool | None = Field(
+        default=None,
+        description="Recall-then-rerank: recall SEARCH_CANDIDATES chunks, reorder them with the cross-encoder, return the top-k. Default: RERANK_ENABLED.",
+    )
+
+
+class RankSignals(BaseModel):
+    """Where a result came from and why it ended at its position: the 1-based rank in each recall branch, the
+    RRF score (hybrid) and the cross-encoder score (reranked). A field is None when that stage did not run or
+    did not return the chunk."""
+
+    vector_rank: int | None = None
+    lexical_rank: int | None = None
+    rrf_score: float | None = None
+    rerank_score: float | None = None
 
 
 class SearchResult(BaseModel):
-    """Un chunk recuperado. `distance` es la distancia coseno: 0 = idéntico, cuanto menor, más cercano."""
+    """Un chunk recuperado.
+
+    `distance` es la distancia coseno (0 = idéntico, cuanto menor, más cercano) y es `None` cuando el chunk
+    solo lo encontró la rama léxica. `score` es lo que ordenó el resultado en la última etapa (similitud
+    coseno, puntuación RRF o puntuación del cross-encoder): mayor es mejor, pero las escalas no son comparables
+    entre configuraciones; `ranking` dice de qué etapa viene cada número.
+    """
 
     chunk_id: int
     document_id: int
     chunk_type: str
     content: str
-    distance: float
+    distance: float | None = Field(default=None, description="Cosine distance; None when only the lexical branch returned the chunk.")
+    score: float = Field(description="Ordering score of the final stage: cosine similarity, RRF score or cross-encoder score.")
+    ranking: RankSignals = Field(default_factory=RankSignals)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SearchTimings(BaseModel):
+    """Milliseconds per stage of the request. Stages that did not run report 0."""
+
+    embedding_ms: int = 0
+    vector_ms: int = 0
+    lexical_ms: int = 0
+    fusion_ms: int = 0
+    rerank_ms: int = 0
+    total_ms: int = 0
 
 
 class SearchResponse(BaseModel):
     query: str
     k: int
-    search_time_ms: int = Field(description="Query embedding + SQL round trip.")
+    mode: SearchMode = Field(description="Search mode that produced the results.")
+    reranked: bool = Field(description="Whether the cross-encoder reordered the candidates.")
+    candidates: int = Field(description="How many chunks reached the final stage (the recall width when reranking, k otherwise).")
+    search_time_ms: int = Field(description="Whole pipeline: query embedding + SQL (+ fusion + rerank).")
+    timings: SearchTimings = Field(default_factory=SearchTimings)
     results: list[SearchResult]

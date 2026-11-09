@@ -1,0 +1,67 @@
+{
+  "description": "Golden set for retrieval (session 10): five client briefs an estimator would bring to the system, each annotated BY HAND with the historical budgets of data/budgets_sample.json that are genuinely useful to estimate it. Relevance is binary and at budget level: a retrieved chunk counts as relevant when its budget_id is in relevant_budget_ids. `distractors` lists the budgets that look similar (same sector label, shared vocabulary) but would mislead the estimate: the failure the exercise describes ('a payment app when the query is an e-commerce platform'). They are listed so the per-query results can be read, not for scoring.",
+  "annotated_on": "2026-11-09",
+  "annotation_notes": [
+    "This is the second golden set. The first (golden_set_paraphrases.json) paraphrased one budget's summary per query and the vector baseline alone scored precision@5 = 1.00 on all five: on a 15-budget corpus whose chunks carry the parent project's summary in their header, paraphrases do not discriminate. These five briefs were written so that no budget is a one-to-one twin of the query, the useful budgets live in another sector than the words of the brief suggest, or an exact term (credit card, SAP, pharmacy) points at the wrong budget.",
+    "Annotation criterion, applied before running any configuration: a budget is relevant when an estimator would open it as a reference for most of the project's components, not when it shares the sector or one component. Borderline budgets are listed as distractors with the reason, so the decision can be argued.",
+    "Queries are in English, the language of the corpus. The project's real inputs are Spanish transcripts; session 09 measured that the language mismatch alone costs ~0.09 of cosine distance, and query reformulation is out of scope here, so the golden set isolates the retrieval question from the language question."
+  ],
+  "k": 5,
+  "queries": [
+    {
+      "id": "pharmacy-online-orders",
+      "query": "A pharmacy chain wants to sell online: customers browse the products, pay by card, choose home delivery or pick-up at their usual pharmacy, and earn loyalty points with every order.",
+      "relevant_budget_ids": ["BUD-2024-021", "BUD-2022-004", "BUD-2025-008"],
+      "rationale": "This is retail e-commerce; the goods being medicines changes nothing about the components to estimate. BUD-2022-004 (mobile shopping app: loyalty points, buy online pick up in store, in-app payments) is the closest reference, BUD-2024-021 (catalog, cart and Stripe checkout, order management) and BUD-2025-008 (online shop with delivery slots by postal code) cover the rest.",
+      "distractors": {
+        "BUD-2024-002": "Dental clinic booking and patient portal: 'pharmacy' pulls towards the healthcare sector, but nothing is sold or shipped.",
+        "BUD-2023-016": "Telemedicine with electronic prescriptions: 'pharmacy' and medicines again; a clinical system, not a shop.",
+        "BUD-2025-011": "Laboratory results portal: healthcare sector label, unrelated.",
+        "BUD-2025-003": "Payment gateway: shares 'pay by card'; PCI infrastructure, useless to estimate a shop."
+      }
+    },
+    {
+      "id": "credit-card-onboarding-tool",
+      "query": "Internal web tool for the staff of a bank's branches to open credit card applications: scan the customer's ID, check them against the credit bureau, sign the contract on a tablet and follow each application until it is approved or rejected.",
+      "relevant_budget_ids": ["BUD-2023-007"],
+      "rationale": "A credit card application is a lending workflow: identity verification, bureau-based scoring, contract e-signature and a back office that follows applications to approval. BUD-2023-007 (loan origination: KYC onboarding, credit scoring engine, contract generation and e-signature, back-office portal) is the reference component by component, even though it says 'loan' and not 'card'.",
+      "distractors": {
+        "BUD-2025-003": "Payment gateway with card tokenisation and 3-D Secure: 'credit card' points straight at it, but it processes payments, it does not issue cards or score applicants.",
+        "BUD-2024-014": "Mobile banking API: 'bank' and 'branches', a different product (accounts, PSD2, notifications).",
+        "BUD-2022-019": "Robo-advisor: its MiFID suitability questionnaire resembles an onboarding step; the rest is portfolio management."
+      }
+    },
+    {
+      "id": "van-fleet-tracking",
+      "query": "We run 300 delivery vans fitted with GPS trackers. We want a live map of the whole fleet, alerts when a van leaves its planned route or stops for too long, and a history of trips per vehicle for the fleet manager.",
+      "relevant_budget_ids": ["BUD-2023-025", "BUD-2024-009"],
+      "rationale": "Two budgets from two sectors hold the pieces: BUD-2023-025 (IoT platform: telemetry ingestion from 2.000 units, alert rules with escalation, fleet dashboard with map, live status and history per unit) and BUD-2024-009 (last-mile delivery: planned routes per vehicle, live GPS position of drivers, tracking). An estimator would open both.",
+      "distractors": {
+        "BUD-2024-030": "MES for a steel plant: shop-floor data acquisition every second and alarms; machines, not vehicles.",
+        "BUD-2025-017": "Warehouse management with barcode scanners: logistics vocabulary, nothing moves on roads."
+      }
+    },
+    {
+      "id": "plant-oee-sap",
+      "query": "Connect the 25 machines of our plant to a screen that shows OEE and downtime per shift, let the operators code the reason of every stop, and post the daily production figures to SAP automatically.",
+      "relevant_budget_ids": ["BUD-2024-030"],
+      "rationale": "BUD-2024-030 (MES: OPC UA / Modbus data acquisition, OEE and downtime dashboards with reason coding by operators, SAP PP confirmations through IDocs) is the same problem at a larger scale.",
+      "distractors": {
+        "BUD-2023-012": "B2B marketplace with SAP Business One integration: the word 'SAP' is an exact lexical match in an e-commerce budget that has no machines.",
+        "BUD-2023-025": "IoT predictive maintenance: sensor telemetry and anomaly models for refrigeration units; no OEE, no ERP.",
+        "BUD-2025-017": "Warehouse and inventory for a packaging manufacturer: 'industrial' sector label only."
+      }
+    },
+    {
+      "id": "insurance-customer-portal",
+      "query": "Customer portal for an insurance broker: clients log in, download their policies and invoices, sign renewal documents electronically and get an SMS when a new document is available.",
+      "relevant_budget_ids": ["BUD-2024-002", "BUD-2025-011"],
+      "rationale": "There is no insurance budget in the corpus, so the useful references are the two document portals: BUD-2024-002 (patient portal: invoices, document download, consent form signature, SMS/WhatsApp notifications) and BUD-2025-011 (results portal: secure login, PDF download, SMS when a report is released). Both are healthcare; the sector does not matter, the components do.",
+      "distractors": {
+        "BUD-2023-016": "Telemedicine: GDPR data export and physician digital signature share vocabulary; a clinical platform with video and prescriptions.",
+        "BUD-2023-007": "Loan origination: its contract e-signature component is transferable, but the budget is a lending platform (KYC, scoring, disbursement).",
+        "BUD-2025-003": "Payment gateway: the merchant dashboard is a portal with role-based access; the project is card processing."
+      }
+    }
+  ]
+}

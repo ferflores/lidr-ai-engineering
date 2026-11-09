@@ -1,10 +1,12 @@
-"""Los dos endpoints del pipeline vectorial (sesión 08).
+"""Los dos endpoints del pipeline vectorial (sesión 08) y los dos interruptores de recuperación (sesión 10).
 
 - `POST /embeddings/ingest`: un presupuesto → `documents` + `chunks` con sus vectores, en una transacción.
   200 con los identificadores y las métricas; 409 si ese `source_path` ya está ingestado; 422 si el body no
   valida; 500 si falta la API key o falla el embedder; 503 si Postgres no responde.
-- `POST /search`: una consulta en lenguaje natural → los k chunks más cercanos por distancia coseno.
-  Mismos códigos de error.
+- `POST /search`: una consulta en lenguaje natural → los k chunks más relevantes. `mode` elige entre
+  búsqueda vectorial y búsqueda híbrida (vectorial + full-text fusionadas con RRF) y `rerank` activa el patrón
+  recall-then-rerank con el cross-encoder; sin indicarlos, mandan `SEARCH_MODE` y `RERANK_ENABLED`.
+  Mismos códigos de error, más 500 si el modelo del reranker no se puede cargar.
 
 Los routers se registran en `app/main.py`: el de ingesta con prefijo `/embeddings`, el de búsqueda en la raíz
 (las dos rutas las fija el enunciado). El proveedor de embeddings es siempre OpenAI (`OPENAI_API_KEY`),
@@ -14,7 +16,6 @@ o las distancias no significan nada.
 
 from __future__ import annotations
 
-import time
 from functools import lru_cache
 
 import structlog
@@ -32,14 +33,15 @@ from app.embedding_pipeline.embedder import OpenAIEmbedder
 from app.embedding_pipeline.repository import (
     DocumentAlreadyIngested,
     ingest_budget_document,
-    search_chunks,
 )
+from app.embedding_pipeline.retrieval import CrossEncoderReranker, RerankerUnavailable, retrieve
 from app.embedding_pipeline.schemas import (
     IngestConflictResponse,
     IngestRequest,
     IngestResponse,
     SearchRequest,
     SearchResponse,
+    SearchTimings,
 )
 
 log = structlog.get_logger(__name__)
@@ -56,12 +58,29 @@ DATABASE_UNAVAILABLE_DETAIL = (
     "migraciones (`alembic upgrade head`) y revisa DATABASE_URL."
 )
 EMBEDDING_FAILED_DETAIL = "La API de embeddings ha fallado; revisa los logs del servicio."
+RERANKER_UNAVAILABLE_DETAIL = (
+    "The reranker model could not be loaded (RERANK_MODEL); see the service logs. Run "
+    "`python -m app.embedding_pipeline.retrieval.verify_reranker`, or disable reranking with "
+    "RERANK_ENABLED=false (or `rerank: false` in the request)."
+)
 
 
 @lru_cache
 def get_chunker() -> JSONStructuralChunker:
     """El chunker carga el tokenizador de tiktoken una vez por proceso."""
     return JSONStructuralChunker()
+
+
+@lru_cache
+def _reranker_for(model: str, batch_size: int, max_length: int, device: str) -> CrossEncoderReranker:
+    return CrossEncoderReranker(model, batch_size=batch_size, max_length=max_length, device=device)
+
+
+def get_reranker(settings: Settings = Depends(get_settings)) -> CrossEncoderReranker:
+    """The process-wide reranker wrapper. Cheap to build: the model itself loads lazily on first use, or at
+    startup when RERANK_ENABLED=true (see the lifespan in `app/main.py`). Tests override this dependency with
+    a wrapper that carries a fake scorer."""
+    return _reranker_for(settings.rerank_model, settings.rerank_batch_size, settings.rerank_max_length, settings.rerank_device)
 
 
 @lru_cache
@@ -172,46 +191,82 @@ async def ingest(
 @search_router.post(
     "/search",
     response_model=SearchResponse,
-    summary="Buscar los k chunks más cercanos a una consulta (distancia coseno)",
+    summary="Buscar los k chunks más relevantes para una consulta (vectorial o híbrida, con o sin reranking)",
     responses={
         422: {"description": "El body no cumple el esquema de la consulta."},
-        500: {"description": "Falta OPENAI_API_KEY o la API de embeddings ha fallado (detalle en los logs)."},
+        500: {"description": "Falta OPENAI_API_KEY, la API de embeddings ha fallado o el modelo del reranker no se puede cargar (detalle en los logs)."},
         503: {"description": "PostgreSQL no está disponible."},
     },
 )
 async def search(
     request: SearchRequest,
+    settings: Settings = Depends(get_settings),
     embedder: OpenAIEmbedder | None = Depends(get_embedder),
+    reranker: CrossEncoderReranker = Depends(get_reranker),
     session: AsyncSession = Depends(get_db_session),
 ) -> SearchResponse:
-    """Vectoriza la consulta con el mismo modelo de la ingesta y resuelve el top-k en SQL con el operador
-    `<=>` (distancia coseno) de pgvector.
+    """Vectoriza la consulta con el mismo modelo de la ingesta y recupera los k chunks más relevantes.
 
-    Sin índice vectorial: Postgres recorre la tabla entera. Para el corpus del curso (decenas de documentos,
-    cientos de chunks) eso son milisegundos, y es la medida de partida contra la que el directo comparará un
-    HNSW."""
+    - `mode=vector`: top-k por distancia coseno (`<=>`) en SQL, el baseline de la sesión 08.
+    - `mode=hybrid`: la rama vectorial y la rama full-text (`content_tsv @@ query`) recuperan cada una
+      `SEARCH_CANDIDATES` chunks y se fusionan con Reciprocal Rank Fusion.
+    - `rerank=true`: recall-then-rerank. Los candidatos recuperados (50 por defecto) se reordenan con el
+      cross-encoder y se devuelven los k mejores.
+
+    Cada etapa viene cronometrada en `timings`, y cada resultado dice en `ranking` en qué posición lo puso
+    cada rama y qué puntuación le dio el reranker. Sin índice vectorial: Postgres recorre la tabla entera, que
+    con el corpus del curso son milisegundos."""
     active_embedder = _require_embedder(embedder)
-    started = time.perf_counter()
+    mode = request.mode or settings.search_mode
+    rerank = settings.rerank_enabled if request.rerank is None else request.rerank
     try:
-        query_vector = await run_in_threadpool(active_embedder.embed_one, request.query)
+        outcome = await retrieve(
+            session,
+            query=request.query,
+            embedder=active_embedder,
+            mode=mode,
+            k=request.k,
+            rerank=rerank,
+            reranker=reranker,
+            candidates=settings.search_candidates,
+            rrf_k=settings.rrf_k,
+        )
     except OpenAIError as exc:
         log.error("search_embedding_failed", error=type(exc).__name__, detail=str(exc))
         raise HTTPException(status_code=500, detail=EMBEDDING_FAILED_DETAIL) from exc
-    try:
-        results = await search_chunks(session, query_vector, request.k)
     except SQLAlchemyError as exc:
-        log.error("search_db_error", error=type(exc).__name__, detail=str(exc))
+        log.error("search_db_error", error=type(exc).__name__, detail=str(exc), mode=mode)
         raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_DETAIL) from exc
+    except RerankerUnavailable as exc:
+        raise HTTPException(status_code=500, detail=RERANKER_UNAVAILABLE_DETAIL) from exc
 
-    search_time_ms = int((time.perf_counter() - started) * 1000)
+    results = outcome.results
     log.info(
         "search_completed",
         query=request.query,
         k=request.k,
+        mode=mode,
+        reranked=rerank,
+        candidates=outcome.candidates,
         results=len(results),
         best_distance=results[0].distance if results else None,
         worst_distance=results[-1].distance if results else None,
-        search_time_ms=search_time_ms,
+        search_time_ms=outcome.timings.total_ms,
+        embedding_ms=outcome.timings.embedding_ms,
+        vector_ms=outcome.timings.vector_ms,
+        lexical_ms=outcome.timings.lexical_ms,
+        fusion_ms=outcome.timings.fusion_ms,
+        rerank_ms=outcome.timings.rerank_ms,
         embedding_model=active_embedder.model,
+        rerank_model=reranker.model_name if rerank else None,
     )
-    return SearchResponse(query=request.query, k=request.k, search_time_ms=search_time_ms, results=results)
+    return SearchResponse(
+        query=request.query,
+        k=request.k,
+        mode=mode,
+        reranked=rerank,
+        candidates=outcome.candidates,
+        search_time_ms=outcome.timings.total_ms,
+        timings=SearchTimings(**outcome.timings.__dict__),
+        results=results,
+    )

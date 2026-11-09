@@ -19,10 +19,15 @@ dependencies = [
     "python-docx>=1.2.0",
     "python-dotenv>=1.2.3",
     "python-multipart>=0.0.32",
+    # Pre-work sesión 10: el reranker es un cross-encoder local (sentence-transformers sobre PyTorch, CPU).
+    "sentence-transformers>=3.3",
     "sqlalchemy[asyncio]>=2.0",
     "streamlit>=1.64.0",
     "structlog>=26.1.0",
     "tiktoken>=0.7.0",
+    # Declared explicitly (sentence-transformers already pulls it) so that `[tool.uv.sources]` below can pin
+    # the CPU-only build on Linux: uv applies sources to the project's declared dependencies.
+    "torch>=2.2",
     "uvicorn[standard]>=0.53.0",
 ]
 
@@ -31,6 +36,17 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
 ]
+
+# PyTorch solo CPU en Linux (la imagen Docker y el CI). La rueda de PyPI para Linux x86_64 arrastra las
+# librerías CUDA (varios GB) que un cross-encoder de 118 M de parámetros no necesita; el índice oficial
+# `cpu` de PyTorch publica ruedas x86_64 y aarch64 sin ellas. En macOS la rueda de PyPI ya es solo CPU.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

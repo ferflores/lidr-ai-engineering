@@ -53,6 +53,13 @@ REQUIRED=(
   app/schemas/structured.py app/services/structured_output.py app/services/guardrails.py
   app/services/litellm_backend.py app/services/semantic_cache_backend.py
   docs/calibracion-cache-semantica.md
+  alembic/versions/0002_chunks_fulltext.py
+  app/embedding_pipeline/retrieval/__init__.py app/embedding_pipeline/retrieval/lexical.py
+  app/embedding_pipeline/retrieval/fusion.py app/embedding_pipeline/retrieval/reranker.py
+  app/embedding_pipeline/retrieval/service.py app/embedding_pipeline/retrieval/verify_reranker.py
+  evals/retrieval/__init__.py evals/retrieval/metrics.py evals/retrieval/run.py
+  evals/retrieval/golden_set.json evals/retrieval/REPORT.md evals/retrieval/results.csv
+  tests/test_retrieval.py
   .env.example .gitignore pyproject.toml README.md
   streamlit_app.py
 )
@@ -97,7 +104,9 @@ echo "== 2/4 Tests =="
 uv run pytest -q
 
 echo "== 3/4 Arranque de la API en $BASE_URL y del formulario de Streamlit =="
-uv run uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning &
+# Sesión 10: sin precarga del cross-encoder aunque el .env local tenga RERANK_ENABLED=true. Aquí se comprueba el
+# contrato HTTP, no el modelo (eso lo hace verify_reranker en el job de Docker), y en el CI no hay pesos cacheados.
+RERANK_PRELOAD=false uv run uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 for _ in $(seq 1 40); do
@@ -154,6 +163,32 @@ if echo "$MIGRATION_SQL" | grep -q "CREATE EXTENSION IF NOT EXISTS vector" \
   ok "la migración 0001 renderiza el esquema esperado (extensión, vector(1536), cascada, GIN)"
 else
   fail "el render offline de la migración no produce el esquema esperado"
+fi
+# Sesión 10: la migración 0002 añade la columna tsvector GENERADA (config english, el idioma del corpus) y su GIN.
+if echo "$MIGRATION_SQL" | grep -q "content_tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('english'::regconfig, content)) STORED" \
+  && echo "$MIGRATION_SQL" | grep -q "ix_chunks_content_tsv_gin ON chunks USING gin (content_tsv)"; then
+  ok "la migración 0002 renderiza la columna tsvector generada (english) y su índice GIN"
+else
+  fail "el render offline de la migración 0002 no produce la columna tsvector generada con su GIN"
+fi
+# Sesión 10: los dos interruptores de /search validan sin base ni modelo, y la fusión RRF y el SQL léxico son los esperados.
+SEARCH_MODE_BAD=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/search" -H "Content-Type: application/json" -d '{"query":"algo","mode":"keyword"}')
+[ "$SEARCH_MODE_BAD" = "422" ] && ok "POST /search rechaza un mode desconocido (422)" || fail "mode inválido en /search devolvió $SEARCH_MODE_BAD"
+echo "$HEALTH" | grep -q '"search_mode"' && echo "$HEALTH" | grep -q '"rerank_enabled"' && ok "GET /health expone search_mode y rerank_enabled" || fail "GET /health sin los interruptores de recuperación"
+if uv run python -c "
+from sqlalchemy.dialects import postgresql
+from app.embedding_pipeline.retrieval import reciprocal_rank_fusion, build_lexical_statement, CrossEncoderReranker
+fused = reciprocal_rank_fusion({'vector': [1, 2, 3], 'lexical': [3, 2, 9]}, k=60)
+assert [c.key for c in fused] == [3, 2, 1, 9], [c.key for c in fused]
+sql = str(build_lexical_statement('fashion store', 50).compile(dialect=postgresql.dialect(), compile_kwargs={'literal_binds': True}))
+assert 'plainto_tsquery' in sql and \"'&', '|'\" in sql and 'content_tsv @@' in sql and 'ts_rank_cd' in sql, sql
+assert CrossEncoderReranker('x').is_loaded is False  # lazy: nothing imported, nothing downloaded
+from app.config import Settings
+assert Settings(_env_file=None).search_mode == 'hybrid' and Settings(_env_file=None).rerank_enabled is False
+" >/dev/null 2>&1; then
+  ok "RRF, SQL de la rama léxica, reranker perezoso y defaults (hybrid, sin rerank) como se espera"
+else
+  fail "el paquete retrieval no se comporta como se espera"
 fi
 # El chunker funciona sin tocar la API de embeddings: 15 presupuestos del sample -> 73 chunks trazables
 if uv run python -c "

@@ -1,13 +1,16 @@
-"""Pipeline de embeddings con persistencia en PostgreSQL + pgvector (sesiones 07 y 08).
+"""Pipeline de embeddings con persistencia en PostgreSQL + pgvector (sesiones 07 y 08) y recuperación
+híbrida con reranking (sesión 10).
 
     presupuesto JSON → JSONStructuralChunker (un componente = un chunk) → OpenAIEmbedder
     (text-embedding-3-small, por lotes) → documents + chunks en PostgreSQL (una transacción)
-    → POST /search resuelve la consulta por distancia coseno en SQL
+    → POST /search: rama vectorial (coseno) [+ rama full-text, fusión RRF] [+ rerank con cross-encoder] → top-k
 
 La sesión 07 montó el chunker y el embedder y devolvía los vectores por HTTP. La 08 los persiste:
 `POST /embeddings/ingest` guarda un documento con sus chunks y devuelve solo identificadores y métricas, y
-`POST /search` recupera los k chunks más cercanos. Todavía **sin índice vectorial** (sequential scan), sin
-filtros por metadata y sin búsqueda híbrida: los añade la sesión en directo.
+`POST /search` recupera los k chunks más cercanos. La 10 añade en `retrieval/` la rama léxica sobre la columna
+generada `content_tsv`, la fusión Reciprocal Rank Fusion y el patrón recall-then-rerank con un cross-encoder
+local, los dos como interruptores (`mode`, `rerank`). Todavía **sin índice vectorial** (sequential scan) y sin
+filtros por metadata: los añade la sesión en directo.
 
 El código de este módulo usa nombres en inglés por convención del curso.
 """
