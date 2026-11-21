@@ -28,6 +28,21 @@ JUDGE = "gpt-4.1-mini-2025-04-14"
 EMBEDDINGS = "text-embedding-3-small"
 
 
+def write_table(report, path):
+    labels = ("Faithfulness", "Answer relevancy", "Context precision", "Context recall")
+    lines = ["# Evaluación Ragas · sesión 11", "",
+             "| Consulta | " + " | ".join(labels) + " |",
+             "|---|---:|---:|---:|---:|"]
+    for row in [*report["rows"], {"id": "**Media**", **report["mean"]}]:
+        values = " | ".join(f"{row[metric]:.3f}" for metric in METRICS)
+        lines.append(f"| {row['id']} | {values} |")
+    lines.extend(["", f"Juez `{report['judge']}`. Embeddings `{report['embedding_model']}`. "
+                  f"Ragas {report['ragas']}.",
+                  "", "[Puntuaciones sin redondear](scores.json) · [Respuestas y fragmentos](samples.json)",
+                  "", "Las medias dan el mismo peso a cada consulta."])
+    path.write_text("\n".join(lines) + "\n")
+
+
 async def score(args):
     data = args.samples.read_bytes()
     samples = json.loads(data)
@@ -60,11 +75,13 @@ async def score(args):
         "mean": {m: mean(row[m] for row in rows) for m in METRICS},
     }
     args.out.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    write_table(report, args.table)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--samples", type=Path, default=HERE / "samples.json")
     parser.add_argument("--out", type=Path, default=HERE / "scores.json")
+    parser.add_argument("--table", type=Path, default=HERE / "baseline.md")
     parser.add_argument("--judge", default=JUDGE)
     asyncio.run(score(parser.parse_args()))

@@ -1,0 +1,65 @@
+{
+  "query": "pharmacy-online-orders",
+  "request_id": "63c04cce-9d81-4611-adf1-3c866283740c",
+  "live_citation_report": [
+    {
+      "component": "Buy online, pick up in store",
+      "status": "grounded",
+      "issues": []
+    },
+    {
+      "component": "Loyalty points and coupons",
+      "status": "grounded",
+      "issues": []
+    },
+    {
+      "component": "In-app payments",
+      "status": "grounded",
+      "issues": []
+    },
+    {
+      "component": "Sales export to Excel",
+      "status": "insufficient_context",
+      "issues": []
+    },
+    {
+      "component": "Bilingual storefront",
+      "status": "insufficient_context",
+      "issues": []
+    }
+  ],
+  "controlled_test": {
+    "component": "Buy online, pick up in store",
+    "original_id": "BUD-2022-004::PICK-004",
+    "injected_id": "INTENTIONAL-DANGLING-CHUNK",
+    "report_after_injection": [
+      {
+        "component": "Buy online, pick up in store",
+        "status": "dangling_citation",
+        "issues": [
+          "Chunk INTENTIONAL-DANGLING-CHUNK was not supplied to the model."
+        ]
+      },
+      {
+        "component": "Loyalty points and coupons",
+        "status": "grounded",
+        "issues": []
+      },
+      {
+        "component": "In-app payments",
+        "status": "grounded",
+        "issues": []
+      },
+      {
+        "component": "Sales export to Excel",
+        "status": "insufficient_context",
+        "issues": []
+      },
+      {
+        "component": "Bilingual storefront",
+        "status": "insufficient_context",
+        "issues": []
+      }
+    ]
+  }
+}

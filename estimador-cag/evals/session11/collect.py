@@ -13,6 +13,17 @@ HERE = Path(__file__).resolve().parent
 GOLDEN = HERE.parent / "retrieval" / "golden_set.json"
 
 
+def as_sample(case, result, passages, retrieval):
+    answer = "\n".join(
+        f"{line.component}: {str(line.hours) + ' hours' if line.grounded else 'insufficient evidence'}. "
+        f"{line.rationale}" for line in result.structured.items)
+    return {
+        "id": case["id"], "retrieval": retrieval, "question": case["query"], "answer": answer,
+        "contexts": [json.dumps(p.model_dump(exclude={"historical_hours"}), ensure_ascii=False) for p in passages],
+        "ground_truth": case["ground_truth"], "result": result.model_dump(),
+    }
+
+
 async def collect(output):
     settings = get_settings()
     golden = json.loads(GOLDEN.read_text())
@@ -20,14 +31,7 @@ async def collect(output):
     for case in golden["queries"]:
         payload = EstimationRequest(transcription=case["query"], response_format="cited")
         result, passages = await generate_cited_estimate(payload, settings)
-        answer = "\n".join(
-            f"{line.component}: {str(line.hours) + ' hours' if line.grounded else 'insufficient evidence'}. "
-            f"{line.rationale}" for line in result.structured.items)
-        samples.append({
-            "id": case["id"], "question": case["query"], "answer": answer,
-            "contexts": [json.dumps(p.model_dump(exclude={"historical_hours"}), ensure_ascii=False) for p in passages],
-            "ground_truth": case["ground_truth"], "result": result.model_dump(),
-        })
+        samples.append(as_sample(case, result, passages, "live_hybrid_reranked"))
         print(f"{case['id']}: {len(passages)} passages, {len(result.structured.items)} lines.", flush=True)
     output.write_text(json.dumps(samples, indent=2, ensure_ascii=False) + "\n")
 
