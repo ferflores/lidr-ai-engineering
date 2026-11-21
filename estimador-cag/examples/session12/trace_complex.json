@@ -1,0 +1,512 @@
+{
+  "execution": "live_openai_responses",
+  "retrieval": "hybrid",
+  "input": "sample_transcript_complex.txt",
+  "input_sha256": "cc8cd536db246b2d5b189e746c990927c8c4d71abab2eee91fe2dc8ef5303c35",
+  "timestamp_utc": "2026-11-21T01:21:42.519753+00:00",
+  "model": "gpt-5-2025-08-07",
+  "effort": "medium",
+  "estimate": {
+    "components": [
+      {
+        "name": "Business backend with API (orders, routing, tracking, rates)",
+        "reference_ids": [
+          "BUD-2024-009::ORD-004",
+          "BUD-2024-009::ROUTE-001",
+          "BUD-2024-009::TRACK-003",
+          "BUD-2024-009::BILL-005"
+        ],
+        "reference_amounts": [
+          90,
+          150,
+          80,
+          50
+        ],
+        "estimated_hours": 97.8,
+        "cost_eur": 4890.0,
+        "unbudgeted": false
+      },
+      {
+        "name": "SAP ERP integration (billing, customers, item master via IDocs)",
+        "reference_ids": [
+          "BUD-2023-012::ERP-004",
+          "BUD-2024-030::SAP-006"
+        ],
+        "reference_amounts": [
+          140,
+          60
+        ],
+        "estimated_hours": 115.0,
+        "cost_eur": 5750.0,
+        "unbudgeted": false
+      },
+      {
+        "name": "Mobile courier app (Android+iOS, offline, route, signature, photo)",
+        "reference_ids": [
+          "BUD-2024-009::DRV-002"
+        ],
+        "reference_amounts": [
+          130
+        ],
+        "estimated_hours": 149.5,
+        "cost_eur": 7475.0,
+        "unbudgeted": false
+      },
+      {
+        "name": "Analytics dashboard (delivery KPIs, costs per route, incidents, trends, filters, alerts)",
+        "reference_ids": [],
+        "reference_amounts": [],
+        "estimated_hours": 0.0,
+        "cost_eur": 0.0,
+        "unbudgeted": true
+      }
+    ],
+    "estimated_hours": 362.3,
+    "cost_eur": 18115.0,
+    "hourly_rate_eur": 50.0,
+    "contingency_percent": 15,
+    "complete": false
+  },
+  "trace": [
+    {
+      "step": 1,
+      "call_id": "call_oe2sfCkb5mGI6qqfkuGY5HHl",
+      "action": "search_budgets",
+      "purpose": "Find comparable historical backends for a logistics core with REST API.",
+      "arguments": {
+        "component": "Business backend with API (orders, routing, tracking, rates)",
+        "query": "Greenfield logistics backend: order management, route assignment, shipment tracking, rate calculation; REST API; Python backend; database schema; background jobs; auth; microservices optional.",
+        "filters": null,
+        "purpose": "Find comparable historical backends for a logistics core with REST API."
+      },
+      "observation": {
+        "matches": [
+          {
+            "id": "BUD-2024-009::ORD-004",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Order intake API and shipper portal\nDescription: REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.\nTech stack: node_express, postgresql, google_maps_api\nComplexity: medium\nEstimated hours: 90",
+            "sector": "logistics",
+            "estimated_hours": 90
+          },
+          {
+            "id": "BUD-2024-009::ROUTE-001",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Route optimisation engine\nDescription: Daily route planning for 120 vehicles using a vehicle routing solver with time windows, capacities and driver shifts, with re-optimisation when orders arrive during the day.\nTech stack: python, ortools, fastapi\nComplexity: high\nEstimated hours: 150",
+            "sector": "logistics",
+            "estimated_hours": 150
+          },
+          {
+            "id": "BUD-2023-012::SHIP-005",
+            "scope": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration]\n[Client sector: ecommerce | Year: 2023 | Main tech: laravel]\n\nComponent: Shipping and pallet logistics\nDescription: Shipping cost calculation by weight, volume and pallet count, integration with two carriers for labels and tracking, and delivery slot selection at checkout.\nTech stack: laravel, mysql\nComplexity: medium\nEstimated hours: 80",
+            "sector": "ecommerce",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2024-009::BILL-005",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Shipper invoicing\nDescription: Monthly invoicing per shipper from delivered stops with tariff tables by zone and weight, credit notes for failed deliveries and export to the accounting system.\nTech stack: node_express, postgresql\nComplexity: low\nEstimated hours: 50",
+            "sector": "logistics",
+            "estimated_hours": 50
+          },
+          {
+            "id": "BUD-2024-009::TRACK-003",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Customer tracking page and notifications\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\nTech stack: node_express, react, websockets, twilio\nComplexity: medium\nEstimated hours: 80",
+            "sector": "logistics",
+            "estimated_hours": 80
+          }
+        ]
+      }
+    },
+    {
+      "step": 1,
+      "call_id": "call_IrLRmbUDQG2pCUVm3JXbcz5C",
+      "action": "search_budgets",
+      "purpose": "Find strong SAP ERP integration references with IDocs and middleware.",
+      "arguments": {
+        "component": "SAP ERP integration (billing, customers, item master via IDocs)",
+        "query": "SAP ERP integration for logistics: synchronize billing, customers, and material master; IDoc mapping; middleware layer; retries; error handling; ECC or S/4HANA; API gateway.",
+        "filters": null,
+        "purpose": "Find strong SAP ERP integration references with IDocs and middleware."
+      },
+      "observation": {
+        "matches": [
+          {
+            "id": "BUD-2023-012::ERP-004",
+            "scope": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration]\n[Client sector: ecommerce | Year: 2023 | Main tech: laravel]\n\nComponent: ERP integration (SAP Business One)\nDescription: Bidirectional synchronisation of customers, stock and invoices with SAP Business One through its Service Layer, with retry queues and a reconciliation report.\nTech stack: laravel, rabbitmq, sap_service_layer\nComplexity: high\nEstimated hours: 140",
+            "sector": "ecommerce",
+            "estimated_hours": 140
+          },
+          {
+            "id": "BUD-2023-012::SHIP-005",
+            "scope": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration]\n[Client sector: ecommerce | Year: 2023 | Main tech: laravel]\n\nComponent: Shipping and pallet logistics\nDescription: Shipping cost calculation by weight, volume and pallet count, integration with two carriers for labels and tracking, and delivery slot selection at checkout.\nTech stack: laravel, mysql\nComplexity: medium\nEstimated hours: 80",
+            "sector": "ecommerce",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2024-009::TRACK-003",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Customer tracking page and notifications\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\nTech stack: node_express, react, websockets, twilio\nComplexity: medium\nEstimated hours: 80",
+            "sector": "logistics",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2023-012::PRICE-002",
+            "scope": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration]\n[Client sector: ecommerce | Year: 2023 | Main tech: laravel]\n\nComponent: Tiered pricing and customer groups\nDescription: Price lists per customer group, volume discounts, negotiated prices per account and VAT handling for intra-community sales.\nTech stack: laravel, mysql\nComplexity: high\nEstimated hours: 90",
+            "sector": "ecommerce",
+            "estimated_hours": 90
+          },
+          {
+            "id": "BUD-2024-009::ORD-004",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Order intake API and shipper portal\nDescription: REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.\nTech stack: node_express, postgresql, google_maps_api\nComplexity: medium\nEstimated hours: 90",
+            "sector": "logistics",
+            "estimated_hours": 90
+          }
+        ]
+      }
+    },
+    {
+      "step": 1,
+      "call_id": "call_dLpcrb6UvPFmAMWieJUmFMiy",
+      "action": "search_budgets",
+      "purpose": "Retrieve references for offline-capable courier apps with PoD.",
+      "arguments": {
+        "component": "Mobile courier app (Android+iOS, offline, route, signature, photo)",
+        "query": "Mobile delivery driver app for Android and iOS with offline mode, daily route list, proof of delivery (signature + photo), background sync, simple UX; React Native or native.",
+        "filters": null,
+        "purpose": "Retrieve references for offline-capable courier apps with PoD."
+      },
+      "observation": {
+        "matches": [
+          {
+            "id": "BUD-2024-009::DRV-002",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Driver mobile app\nDescription: Flutter app with stop list, navigation hand-off, proof of delivery with photo and signature, failed delivery reasons and offline queue.\nTech stack: flutter, dart, node_express\nComplexity: medium\nEstimated hours: 130",
+            "sector": "logistics",
+            "estimated_hours": 130
+          },
+          {
+            "id": "BUD-2022-004::APP-001",
+            "scope": "[Project: Mobile shopping app for a home and garden retailer with loyalty points and store pickup]\n[Client sector: ecommerce | Year: 2022 | Main tech: react_native]\n\nComponent: Cross-platform mobile app shell\nDescription: React Native app for iOS and Android with navigation, offline product browsing cache, push notifications and crash reporting, published to both stores.\nTech stack: react_native, typescript, expo\nComplexity: medium\nEstimated hours: 120",
+            "sector": "ecommerce",
+            "estimated_hours": 120
+          },
+          {
+            "id": "BUD-2024-009::TRACK-003",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Customer tracking page and notifications\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\nTech stack: node_express, react, websockets, twilio\nComplexity: medium\nEstimated hours: 80",
+            "sector": "logistics",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2024-009::ROUTE-001",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Route optimisation engine\nDescription: Daily route planning for 120 vehicles using a vehicle routing solver with time windows, capacities and driver shifts, with re-optimisation when orders arrive during the day.\nTech stack: python, ortools, fastapi\nComplexity: high\nEstimated hours: 150",
+            "sector": "logistics",
+            "estimated_hours": 150
+          },
+          {
+            "id": "BUD-2024-009::ORD-004",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Order intake API and shipper portal\nDescription: REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.\nTech stack: node_express, postgresql, google_maps_api\nComplexity: medium\nEstimated hours: 90",
+            "sector": "logistics",
+            "estimated_hours": 90
+          }
+        ]
+      }
+    },
+    {
+      "step": 1,
+      "call_id": "call_ELjaoo9WMi6OMdo2p0dfJiiK",
+      "action": "search_budgets",
+      "purpose": "Look up BI/analytics dashboard builds for logistics KPIs with alerts.",
+      "arguments": {
+        "component": "Analytics dashboard (delivery KPIs, costs per route, incidents, trends, filters, alerts)",
+        "query": "Logistics analytics dashboard with KPIs (on-time deliveries, cost per route, incidents), trend analysis, filters by zone and customer, alerts; data ingestion/ETL and BI setup.",
+        "filters": null,
+        "purpose": "Look up BI/analytics dashboard builds for logistics KPIs with alerts."
+      },
+      "observation": {
+        "matches": [
+          {
+            "id": "BUD-2024-009::ORD-004",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Order intake API and shipper portal\nDescription: REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.\nTech stack: node_express, postgresql, google_maps_api\nComplexity: medium\nEstimated hours: 90",
+            "sector": "logistics",
+            "estimated_hours": 90
+          },
+          {
+            "id": "BUD-2024-009::BILL-005",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Shipper invoicing\nDescription: Monthly invoicing per shipper from delivered stops with tariff tables by zone and weight, credit notes for failed deliveries and export to the accounting system.\nTech stack: node_express, postgresql\nComplexity: low\nEstimated hours: 50",
+            "sector": "logistics",
+            "estimated_hours": 50
+          },
+          {
+            "id": "BUD-2024-009::TRACK-003",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Customer tracking page and notifications\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\nTech stack: node_express, react, websockets, twilio\nComplexity: medium\nEstimated hours: 80",
+            "sector": "logistics",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2024-009::ROUTE-001",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Route optimisation engine\nDescription: Daily route planning for 120 vehicles using a vehicle routing solver with time windows, capacities and driver shifts, with re-optimisation when orders arrive during the day.\nTech stack: python, ortools, fastapi\nComplexity: high\nEstimated hours: 150",
+            "sector": "logistics",
+            "estimated_hours": 150
+          },
+          {
+            "id": "BUD-2024-009::DRV-002",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Driver mobile app\nDescription: Flutter app with stop list, navigation hand-off, proof of delivery with photo and signature, failed delivery reasons and offline queue.\nTech stack: flutter, dart, node_express\nComplexity: medium\nEstimated hours: 130",
+            "sector": "logistics",
+            "estimated_hours": 130
+          }
+        ]
+      }
+    },
+    {
+      "step": 2,
+      "call_id": "call_u848XZrY87bpp8BQPhWpIthE",
+      "action": "search_budgets",
+      "purpose": "Seek a backend-only shipment tracking service comparable to RUTA tracking scope.",
+      "arguments": {
+        "component": "Business backend with API (orders, routing, tracking, rates)",
+        "query": "Logistics shipment tracking backend service: ingest driver GPS pings and delivery events, compute ETA, expose tracking API/webhooks; no customer UI; Python FastAPI; background workers; Redis queues.",
+        "filters": null,
+        "purpose": "Seek a backend-only shipment tracking service comparable to RUTA tracking scope."
+      },
+      "observation": {
+        "matches": [
+          {
+            "id": "BUD-2024-009::ORD-004",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Order intake API and shipper portal\nDescription: REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.\nTech stack: node_express, postgresql, google_maps_api\nComplexity: medium\nEstimated hours: 90",
+            "sector": "logistics",
+            "estimated_hours": 90
+          },
+          {
+            "id": "BUD-2024-009::TRACK-003",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Customer tracking page and notifications\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\nTech stack: node_express, react, websockets, twilio\nComplexity: medium\nEstimated hours: 80",
+            "sector": "logistics",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2023-012::SHIP-005",
+            "scope": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration]\n[Client sector: ecommerce | Year: 2023 | Main tech: laravel]\n\nComponent: Shipping and pallet logistics\nDescription: Shipping cost calculation by weight, volume and pallet count, integration with two carriers for labels and tracking, and delivery slot selection at checkout.\nTech stack: laravel, mysql\nComplexity: medium\nEstimated hours: 80",
+            "sector": "ecommerce",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2024-009::BILL-005",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Shipper invoicing\nDescription: Monthly invoicing per shipper from delivered stops with tariff tables by zone and weight, credit notes for failed deliveries and export to the accounting system.\nTech stack: node_express, postgresql\nComplexity: low\nEstimated hours: 50",
+            "sector": "logistics",
+            "estimated_hours": 50
+          },
+          {
+            "id": "BUD-2024-009::ROUTE-001",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Route optimisation engine\nDescription: Daily route planning for 120 vehicles using a vehicle routing solver with time windows, capacities and driver shifts, with re-optimisation when orders arrive during the day.\nTech stack: python, ortools, fastapi\nComplexity: high\nEstimated hours: 150",
+            "sector": "logistics",
+            "estimated_hours": 150
+          }
+        ]
+      }
+    },
+    {
+      "step": 3,
+      "call_id": "call_oJdBp7pe8Ia3h2lb1j1RHKII",
+      "action": "search_budgets",
+      "purpose": "Find IDoc-based SAP ERP integrations similar to RUTA’s scope.",
+      "arguments": {
+        "component": "SAP ERP integration (billing, customers, item master via IDocs)",
+        "query": "SAP ECC/S4 integration using IDocs for customers (DEBMAS), materials (MATMAS) and billing (INVOIC); middleware with retry queues; error reconciliation; mapping and transformations.",
+        "filters": null,
+        "purpose": "Find IDoc-based SAP ERP integrations similar to RUTA’s scope."
+      },
+      "observation": {
+        "matches": [
+          {
+            "id": "BUD-2023-012::ERP-004",
+            "scope": "[Project: B2B marketplace for hardware suppliers with tiered pricing, quotes and ERP integration]\n[Client sector: ecommerce | Year: 2023 | Main tech: laravel]\n\nComponent: ERP integration (SAP Business One)\nDescription: Bidirectional synchronisation of customers, stock and invoices with SAP Business One through its Service Layer, with retry queues and a reconciliation report.\nTech stack: laravel, rabbitmq, sap_service_layer\nComplexity: high\nEstimated hours: 140",
+            "sector": "ecommerce",
+            "estimated_hours": 140
+          },
+          {
+            "id": "BUD-2024-030::SAP-006",
+            "scope": "[Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards]\n[Client sector: industrial | Year: 2024 | Main tech: dotnet]\n\nComponent: SAP PP confirmations\nDescription: Posting of production confirmations, scrap and goods movements back to SAP PP through IDocs with error queue and manual reprocessing screen.\nTech stack: dotnet, sap_idoc, rabbitmq\nComplexity: high\nEstimated hours: 60",
+            "sector": "industrial",
+            "estimated_hours": 60
+          },
+          {
+            "id": "BUD-2025-003::3DS-002",
+            "scope": "[Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard]\n[Client sector: finance | Year: 2025 | Main tech: spring_boot]\n\nComponent: 3-D Secure 2 authentication flow\nDescription: Integration with the card schemes' 3DS2 directory servers, challenge and frictionless flows, and fallback handling when the issuer ACS is unavailable.\nTech stack: spring_boot, java\nComplexity: high\nEstimated hours: 110",
+            "sector": "finance",
+            "estimated_hours": 110
+          },
+          {
+            "id": "BUD-2024-009::TRACK-003",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Customer tracking page and notifications\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\nTech stack: node_express, react, websockets, twilio\nComplexity: medium\nEstimated hours: 80",
+            "sector": "logistics",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2024-030::WO-002",
+            "scope": "[Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards]\n[Client sector: industrial | Year: 2024 | Main tech: dotnet]\n\nComponent: Work order execution\nDescription: Download of production orders from SAP, operator terminal to start, pause and complete operations, material consumption and traceability of heats and coils.\nTech stack: dotnet, blazor, sql_server\nComplexity: high\nEstimated hours: 180",
+            "sector": "industrial",
+            "estimated_hours": 180
+          }
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "call_id": "call_s77mPVccoaRARza1xVKLD1Au",
+      "action": "search_budgets",
+      "purpose": "Find BI/dashboard builds for logistics KPIs with filters and alerting.",
+      "arguments": {
+        "component": "Analytics dashboard (delivery KPIs, costs per route, incidents, trends, filters, alerts)",
+        "query": "Logistics BI dashboard: on-time delivery KPI, cost per route, incidents; trend charts; filters by zone and customer; alerting on anomalies; ETL from operational DB; Power BI/Metabase setup.",
+        "filters": null,
+        "purpose": "Find BI/dashboard builds for logistics KPIs with filters and alerting."
+      },
+      "observation": {
+        "matches": [
+          {
+            "id": "BUD-2024-009::ORD-004",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Order intake API and shipper portal\nDescription: REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.\nTech stack: node_express, postgresql, google_maps_api\nComplexity: medium\nEstimated hours: 90",
+            "sector": "logistics",
+            "estimated_hours": 90
+          },
+          {
+            "id": "BUD-2024-009::BILL-005",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Shipper invoicing\nDescription: Monthly invoicing per shipper from delivered stops with tariff tables by zone and weight, credit notes for failed deliveries and export to the accounting system.\nTech stack: node_express, postgresql\nComplexity: low\nEstimated hours: 50",
+            "sector": "logistics",
+            "estimated_hours": 50
+          },
+          {
+            "id": "BUD-2024-009::TRACK-003",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Customer tracking page and notifications\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\nTech stack: node_express, react, websockets, twilio\nComplexity: medium\nEstimated hours: 80",
+            "sector": "logistics",
+            "estimated_hours": 80
+          },
+          {
+            "id": "BUD-2024-009::ROUTE-001",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Route optimisation engine\nDescription: Daily route planning for 120 vehicles using a vehicle routing solver with time windows, capacities and driver shifts, with re-optimisation when orders arrive during the day.\nTech stack: python, ortools, fastapi\nComplexity: high\nEstimated hours: 150",
+            "sector": "logistics",
+            "estimated_hours": 150
+          },
+          {
+            "id": "BUD-2024-009::DRV-002",
+            "scope": "[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\n\nComponent: Driver mobile app\nDescription: Flutter app with stop list, navigation hand-off, proof of delivery with photo and signature, failed delivery reasons and offline queue.\nTech stack: flutter, dart, node_express\nComplexity: medium\nEstimated hours: 130",
+            "sector": "logistics",
+            "estimated_hours": 130
+          }
+        ]
+      }
+    },
+    {
+      "step": 5,
+      "call_id": "call_hN7Or5TJ2LBSkxOGN4aRWARm",
+      "action": "calculate_estimate",
+      "purpose": "Calculate total engineer-hours for RUTA’s four components using closest historical matches; mark analytics as pending if no references.",
+      "arguments": {
+        "components": [
+          {
+            "name": "Business backend with API (orders, routing, tracking, rates)",
+            "reference_ids": [
+              "BUD-2024-009::ORD-004",
+              "BUD-2024-009::ROUTE-001",
+              "BUD-2024-009::TRACK-003",
+              "BUD-2024-009::BILL-005"
+            ],
+            "reference_amounts": [
+              90,
+              150,
+              80,
+              50
+            ]
+          },
+          {
+            "name": "SAP ERP integration (billing, customers, item master via IDocs)",
+            "reference_ids": [
+              "BUD-2023-012::ERP-004",
+              "BUD-2024-030::SAP-006"
+            ],
+            "reference_amounts": [
+              140,
+              60
+            ]
+          },
+          {
+            "name": "Mobile courier app (Android+iOS, offline, route, signature, photo)",
+            "reference_ids": [
+              "BUD-2024-009::DRV-002"
+            ],
+            "reference_amounts": [
+              130
+            ]
+          },
+          {
+            "name": "Analytics dashboard (delivery KPIs, costs per route, incidents, trends, filters, alerts)",
+            "reference_ids": [],
+            "reference_amounts": []
+          }
+        ],
+        "purpose": "Calculate total engineer-hours for RUTA’s four components using closest historical matches; mark analytics as pending if no references."
+      },
+      "observation": {
+        "components": [
+          {
+            "name": "Business backend with API (orders, routing, tracking, rates)",
+            "reference_ids": [
+              "BUD-2024-009::ORD-004",
+              "BUD-2024-009::ROUTE-001",
+              "BUD-2024-009::TRACK-003",
+              "BUD-2024-009::BILL-005"
+            ],
+            "reference_amounts": [
+              90,
+              150,
+              80,
+              50
+            ],
+            "estimated_hours": 97.8,
+            "cost_eur": 4890.0,
+            "unbudgeted": false
+          },
+          {
+            "name": "SAP ERP integration (billing, customers, item master via IDocs)",
+            "reference_ids": [
+              "BUD-2023-012::ERP-004",
+              "BUD-2024-030::SAP-006"
+            ],
+            "reference_amounts": [
+              140,
+              60
+            ],
+            "estimated_hours": 115.0,
+            "cost_eur": 5750.0,
+            "unbudgeted": false
+          },
+          {
+            "name": "Mobile courier app (Android+iOS, offline, route, signature, photo)",
+            "reference_ids": [
+              "BUD-2024-009::DRV-002"
+            ],
+            "reference_amounts": [
+              130
+            ],
+            "estimated_hours": 149.5,
+            "cost_eur": 7475.0,
+            "unbudgeted": false
+          },
+          {
+            "name": "Analytics dashboard (delivery KPIs, costs per route, incidents, trends, filters, alerts)",
+            "reference_ids": [],
+            "reference_amounts": [],
+            "estimated_hours": 0.0,
+            "cost_eur": 0.0,
+            "unbudgeted": true
+          }
+        ],
+        "estimated_hours": 362.3,
+        "cost_eur": 18115.0,
+        "hourly_rate_eur": 50.0,
+        "contingency_percent": 15,
+        "complete": false
+      }
+    },
+    {
+      "step": 6,
+      "action": "finish",
+      "purpose": "Return the consolidated calculation.",
+      "observation": "Entregables identificados en el alcance (según la reunión):\n- Backend de negocio con API: gestión de pedidos, asignación de rutas, seguimiento de envíos y cálculo de tarifas.\n- Integración con ERP SAP: sincronización de facturación, clientes y maestro de artículos vía IDocs, con middleware y reintentos.\n- App móvil para repartidores (Android/iOS): hoja de ruta diaria, prueba de entrega con firma y foto, modo offline con sincronización.\n- Panel de analítica: KPIs de entregas a tiempo, costes por ruta e incidencias; tendencias, filtros por zona/cliente y alertas.\n\nEstimación basada en referencias históricas (ingeniería, horas y coste):\n- Business backend with API (orders, routing, tracking, rates)\n  - Referencias usadas: BUD-2024-009::ORD-004; BUD-2024-009::ROUTE-001; BUD-2024-009::TRACK-003; BUD-2024-009::BILL-005\n  - Estimación: 97.8 h — 4,890 € \n- SAP ERP integration (billing, customers, item master via IDocs)\n  - Referencias usadas: BUD-2023-012::ERP-004; BUD-2024-030::SAP-006\n  - Estimación: 115.0 h — 5,750 € \n- Mobile courier app (Android+iOS, offline, route, signature, photo)\n  - Referencias usadas: BUD-2024-009::DRV-002\n  - Estimación: 149.5 h — 7,475 € \n- Analytics dashboard (delivery KPIs, costs per route, incidents, trends, filters, alerts)\n  - Referencias usadas: (pendiente; sin coincidencias suficientemente comparables)\n  - Estimación: 0.0 h — 0 €\n\nTotales del cálculo actual:\n- Total horas: 362.3 h\n- Total coste: 18,115 €\n- Nota: El panel de analítica queda pendiente de referencias comparables; el total se actualizará cuando se incorporen.\n\nNext step: We can refine the analytics scope (tools, data sources, alerting approach) and attach matching historical references to complete the estimate."
+    }
+  ]
+}

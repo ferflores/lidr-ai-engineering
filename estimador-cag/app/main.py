@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from app.agent.router import router as agent_router
 from app.config import Settings, get_settings
 from app.embedding_pipeline.retrieval import RerankerUnavailable
 from app.embedding_pipeline.router import get_reranker
@@ -96,6 +97,7 @@ app = FastAPI(
     ],
 )
 
+app.include_router(agent_router, prefix="/api/v1")
 app.include_router(estimations.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(embeddings_router, prefix="/embeddings")  # POST /embeddings/ingest (ruta fijada por el enunciado de la sesión 07)
