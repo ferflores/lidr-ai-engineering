@@ -10,6 +10,7 @@
   "queries": [
     {
       "id": "pharmacy-online-orders",
+      "ground_truth": "Product catalogue 110 h (CAT-001), cart and card checkout 100 h (CART-003), home delivery slots 60 h (SLOT-002), pick-up at a store 110 h (PICK-004), and loyalty points 100 h (LOYAL-003). These separate historical benchmarks sum to 480 h.",
       "query": "A pharmacy chain wants to sell online: customers browse the products, pay by card, choose home delivery or pick-up at their usual pharmacy, and earn loyalty points with every order.",
       "relevant_budget_ids": ["BUD-2024-021", "BUD-2022-004", "BUD-2025-008"],
       "rationale": "This is retail e-commerce; the goods being medicines changes nothing about the components to estimate. BUD-2022-004 (mobile shopping app: loyalty points, buy online pick up in store, in-app payments) is the closest reference, BUD-2024-021 (catalog, cart and Stripe checkout, order management) and BUD-2025-008 (online shop with delivery slots by postal code) cover the rest.",
@@ -22,6 +23,7 @@
     },
     {
       "id": "credit-card-onboarding-tool",
+      "ground_truth": "Applicant onboarding and identity verification 130 h (ONB-001), credit bureau scoring 160 h (SCORE-002), electronic contract signature 90 h (CONTRACT-003), and branch back-office application tracking 110 h (BACK-005). The four historical benchmarks sum to 490 h.",
       "query": "Internal web tool for the staff of a bank's branches to open credit card applications: scan the customer's ID, check them against the credit bureau, sign the contract on a tablet and follow each application until it is approved or rejected.",
       "relevant_budget_ids": ["BUD-2023-007"],
       "rationale": "A credit card application is a lending workflow: identity verification, bureau-based scoring, contract e-signature and a back office that follows applications to approval. BUD-2023-007 (loan origination: KYC onboarding, credit scoring engine, contract generation and e-signature, back-office portal) is the reference component by component, even though it says 'loan' and not 'card'.",
@@ -33,6 +35,7 @@
     },
     {
       "id": "van-fleet-tracking",
+      "ground_truth": "The historical fleet dashboard with map, live status and per-unit history is 100 h (FLEET-004). Alert rules and escalation are 90 h (ALERT-003), as an analogy for fleet alerts. Route-deviation and prolonged-stop detection are not priced separately in those items. GPS telemetry ingestion for vehicles needs scope confirmation; the 130 h (ING-001) reference is for refrigeration telemetry.",
       "query": "We run 300 delivery vans fitted with GPS trackers. We want a live map of the whole fleet, alerts when a van leaves its planned route or stops for too long, and a history of trips per vehicle for the fleet manager.",
       "relevant_budget_ids": ["BUD-2023-025", "BUD-2024-009"],
       "rationale": "Two budgets from two sectors hold the pieces: BUD-2023-025 (IoT platform: telemetry ingestion from 2.000 units, alert rules with escalation, fleet dashboard with map, live status and history per unit) and BUD-2024-009 (last-mile delivery: planned routes per vehicle, live GPS position of drivers, tracking). An estimator would open both.",
@@ -43,6 +46,7 @@
     },
     {
       "id": "plant-oee-sap",
+      "ground_truth": "Machine data collection via OPC UA and Modbus is 200 h (PLC-001 for 40 machines). The OEE dashboard by machine and shift, including operator downtime reason coding, is 110 h (OEE-004). SAP PP production confirmations via IDocs are 60 h (SAP-006). Reference subtotal 370 h; scaling down to 25 machines requires confirmation.",
       "query": "Connect the 25 machines of our plant to a screen that shows OEE and downtime per shift, let the operators code the reason of every stop, and post the daily production figures to SAP automatically.",
       "relevant_budget_ids": ["BUD-2024-030"],
       "rationale": "BUD-2024-030 (MES: OPC UA / Modbus data acquisition, OEE and downtime dashboards with reason coding by operators, SAP PP confirmations through IDocs) is the same problem at a larger scale.",
@@ -54,6 +58,7 @@
     },
     {
       "id": "insurance-customer-portal",
+      "ground_truth": "A comparable authenticated portal with invoice download and consent signature is 90 h (BUD-2024-002 PORTAL-003). Another secure PDF portal with SMS on release is 100 h (BUD-2025-011 PORTAL-003). These alternatives overlap. Insurance policy renewals and their signature requirements need confirmation. There is no separately verified full-project total.",
       "query": "Customer portal for an insurance broker: clients log in, download their policies and invoices, sign renewal documents electronically and get an SMS when a new document is available.",
       "relevant_budget_ids": ["BUD-2024-002", "BUD-2025-011"],
       "rationale": "There is no insurance budget in the corpus, so the useful references are the two document portals: BUD-2024-002 (patient portal: invoices, document download, consent form signature, SMS/WhatsApp notifications) and BUD-2025-011 (results portal: secure login, PDF download, SMS when a report is released). Both are healthcare; the sector does not matter, the components do.",

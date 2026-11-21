@@ -5,9 +5,13 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from openai import OpenAIError
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings, get_settings
+from app.embedding_pipeline.retrieval import RerankerUnavailable
+from app.services.cited_estimate import CitedResponse, generate_cited_estimate
 from app.schemas.estimation import EstimationRequest
 from app.schemas.structured import StructuredEstimation
 from app.services.llm_service import LLMConfigurationError, LLMProviderError, cost_for, generate_estimation
@@ -113,7 +117,7 @@ class PromptTemplateListResponse(BaseModel):
 
 @router.post(
     "/estimate",
-    response_model=EstimationResponse,
+    response_model=EstimationResponse | CitedResponse,
     summary="Genera una estimación de software a partir de una transcripción y unos parámetros",
     description=(
         "Recibe la transcripción de una reunión con el cliente y los parámetros tipados de la estimación "
@@ -130,8 +134,17 @@ class PromptTemplateListResponse(BaseModel):
 async def create_estimation(
     payload: EstimationRequest,
     settings: Settings = Depends(get_settings),
-) -> EstimationResponse:
+) -> EstimationResponse | CitedResponse:
     entrada = await _guard_input(payload, settings)
+
+    if payload.response_format == "cited":
+        try:
+            result, _ = await generate_cited_estimate(payload, settings)
+            return result
+        except (SQLAlchemyError, RerankerUnavailable, OSError) as exc:
+            raise HTTPException(503, "Historical budget retrieval is unavailable.") from exc
+        except (OpenAIError, RuntimeError) as exc:
+            raise HTTPException(502, "The cited estimate could not be generated.") from exc
 
     if payload.response_format in ("structured", "both"):
         return await _structured_estimation(payload, settings, entrada)
