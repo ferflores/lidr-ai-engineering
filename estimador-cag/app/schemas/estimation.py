@@ -20,7 +20,7 @@ DetailLevel = Literal["completa", "resumen"]
 # Cómo se quiere la estimación de vuelta (sesión 04, bloque de extracción de datos estructurados).
 # `markdown` es el comportamiento histórico; `structured` devuelve el objeto tipado; `both` devuelve los dos,
 # y el Markdown se renderiza desde el objeto, no desde otra llamada al modelo.
-ResponseFormat = Literal["markdown", "structured", "both"]
+ResponseFormat = Literal["markdown", "structured", "both", "cited"]
 
 PROJECT_TYPE_LABELS: dict[str, str] = {
     "web": "Aplicación web",
@@ -100,9 +100,8 @@ class EstimationRequest(BaseModel):
     response_format: ResponseFormat = Field(
         default="markdown",
         description=(
-            "Qué devolver: `markdown` (texto, comportamiento histórico), `structured` (objeto tipado y validado) "
-            "o `both`. En los dos últimos el modelo responde con JSON contra un esquema y la respuesta se valida "
-            "antes de salir del servicio."
+            "Return Markdown, a structured estimate, both representations, or a cited estimate "
+            "with verified historical references for each line."
         ),
     )
 

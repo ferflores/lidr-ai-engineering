@@ -1,0 +1,544 @@
+[
+  {
+    "id": "pharmacy-online-orders",
+    "retrieval": "published_session10_config_D",
+    "question": "A pharmacy chain wants to sell online: customers browse the products, pay by card, choose home delivery or pick-up at their usual pharmacy, and earn loyalty points with every order.",
+    "answer": "Buy online, pick up in store: 110.0 hours. This component closely aligns with the requirement for customers to choose pickup at their usual pharmacy. The scope includes store selection, real-time stock, and QR code for collection, which supports the pickup process.\nLoyalty points and coupons: 100.0 hours. This component directly relates to earning loyalty points with every order, encompassing points accrual, tier benefits, and coupon redemption. The functionalities fit perfectly within the brief's scope.\nIn-app payments: 60.0 hours. This component is applicable as it covers card payment processing, which is essential for the online purchase feature outlined in the brief. It facilitates a seamless transaction experience.\nSales export to Excel: insufficient evidence. There is no relevant information in the passages regarding sales reporting requirements as specified in the brief. Further detail is needed to determine if this or similar reports are necessary.\nBilingual storefront: insufficient evidence. The brief does not mention any need for multilingual support or localization. No comparable information exists within the passages to estimate this deliverable accurately.",
+    "contexts": [
+      "{\"chunk_id\": \"BUD-2022-004::PICK-004\", \"document_id\": \"BUD-2022-004\", \"text\": \"[Project: Mobile shopping app for a home and garden retailer with loyalty points and store pickup]\\n[Client sector: ecommerce | Year: 2022 | Main tech: react_native]\\n\\nComponent: Buy online, pick up in store\\nDescription: Store selector with real-time stock per store, pickup time reservation, QR code for collection and staff app screen to mark orders as handed over.\\nTech stack: node_express, postgresql, react_native\\nComplexity: high\\nEstimated hours: 110\"}",
+      "{\"chunk_id\": \"BUD-2025-008::RPT-005\", \"document_id\": \"BUD-2025-008\", \"text\": \"[Project: Online bakery shop with next-day delivery slots, subscriptions and WooCommerce migration]\\n[Client sector: ecommerce | Year: 2025 | Main tech: wordpress]\\n\\nComponent: Sales export to Excel\\nDescription: Daily and monthly sales, product and delivery-route reports exported to Excel for the accountant, scheduled by email.\\nTech stack: php, phpspreadsheet\\nComplexity: low\\nEstimated hours: 40\"}",
+      "{\"chunk_id\": \"BUD-2022-004::LOYAL-003\", \"document_id\": \"BUD-2022-004\", \"text\": \"[Project: Mobile shopping app for a home and garden retailer with loyalty points and store pickup]\\n[Client sector: ecommerce | Year: 2022 | Main tech: react_native]\\n\\nComponent: Loyalty points and coupons\\nDescription: Points accrual on purchases, tiers with benefits, coupon redemption at checkout and a monthly expiry job, exposed through a rules-driven service.\\nTech stack: node_express, postgresql, redis\\nComplexity: high\\nEstimated hours: 100\"}",
+      "{\"chunk_id\": \"BUD-2025-008::I18N-004\", \"document_id\": \"BUD-2025-008\", \"text\": \"[Project: Online bakery shop with next-day delivery slots, subscriptions and WooCommerce migration]\\n[Client sector: ecommerce | Year: 2025 | Main tech: wordpress]\\n\\nComponent: Bilingual storefront (Spanish and Catalan)\\nDescription: Translation of catalog, checkout and transactional emails into Catalan with language switch and localised URLs, keeping a single order database.\\nTech stack: wordpress, wpml\\nComplexity: low\\nEstimated hours: 40\"}",
+      "{\"chunk_id\": \"BUD-2022-004::PAY-005\", \"document_id\": \"BUD-2022-004\", \"text\": \"[Project: Mobile shopping app for a home and garden retailer with loyalty points and store pickup]\\n[Client sector: ecommerce | Year: 2022 | Main tech: react_native]\\n\\nComponent: In-app payments\\nDescription: Card payments with Conekta and OXXO cash vouchers, saved cards per customer and refund handling for cancelled pickups.\\nTech stack: react_native, conekta, node_express\\nComplexity: medium\\nEstimated hours: 60\"}"
+    ],
+    "ground_truth": "Product catalogue 110 h (CAT-001), cart and card checkout 100 h (CART-003), home delivery slots 60 h (SLOT-002), pick-up at a store 110 h (PICK-004), and loyalty points 100 h (LOYAL-003). These separate historical benchmarks sum to 480 h.",
+    "result": {
+      "request_id": "63c04cce-9d81-4611-adf1-3c866283740c",
+      "model": "gpt-4o-mini-2024-07-18",
+      "structured": {
+        "items": [
+          {
+            "component": "Buy online, pick up in store",
+            "hours": 110.0,
+            "rationale": "This component closely aligns with the requirement for customers to choose pickup at their usual pharmacy. The scope includes store selection, real-time stock, and QR code for collection, which supports the pickup process.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2022-004::PICK-004",
+                "document_id": "BUD-2022-004",
+                "evidence": "Component: Buy online, pick up in store"
+              },
+              {
+                "chunk_id": "BUD-2022-004::PICK-004",
+                "document_id": "BUD-2022-004",
+                "evidence": "Estimated hours: 110"
+              }
+            ]
+          },
+          {
+            "component": "Loyalty points and coupons",
+            "hours": 100.0,
+            "rationale": "This component directly relates to earning loyalty points with every order, encompassing points accrual, tier benefits, and coupon redemption. The functionalities fit perfectly within the brief's scope.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2022-004::LOYAL-003",
+                "document_id": "BUD-2022-004",
+                "evidence": "Component: Loyalty points and coupons"
+              },
+              {
+                "chunk_id": "BUD-2022-004::LOYAL-003",
+                "document_id": "BUD-2022-004",
+                "evidence": "Estimated hours: 100"
+              }
+            ]
+          },
+          {
+            "component": "In-app payments",
+            "hours": 60.0,
+            "rationale": "This component is applicable as it covers card payment processing, which is essential for the online purchase feature outlined in the brief. It facilitates a seamless transaction experience.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2022-004::PAY-005",
+                "document_id": "BUD-2022-004",
+                "evidence": "Component: In-app payments"
+              },
+              {
+                "chunk_id": "BUD-2022-004::PAY-005",
+                "document_id": "BUD-2022-004",
+                "evidence": "Estimated hours: 60"
+              }
+            ]
+          },
+          {
+            "component": "Sales export to Excel",
+            "hours": null,
+            "rationale": "There is no relevant information in the passages regarding sales reporting requirements as specified in the brief. Further detail is needed to determine if this or similar reports are necessary.",
+            "grounded": false,
+            "sources": []
+          },
+          {
+            "component": "Bilingual storefront",
+            "hours": null,
+            "rationale": "The brief does not mention any need for multilingual support or localization. No comparable information exists within the passages to estimate this deliverable accurately.",
+            "grounded": false,
+            "sources": []
+          }
+        ]
+      },
+      "citation_report": [
+        {
+          "component": "Buy online, pick up in store",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Loyalty points and coupons",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "In-app payments",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Sales export to Excel",
+          "status": "insufficient_context",
+          "issues": []
+        },
+        {
+          "component": "Bilingual storefront",
+          "status": "insufficient_context",
+          "issues": []
+        }
+      ],
+      "subtotal_hours": 270.0,
+      "complete": false
+    }
+  },
+  {
+    "id": "credit-card-onboarding-tool",
+    "retrieval": "published_session10_config_D",
+    "question": "Internal web tool for the staff of a bank's branches to open credit card applications: scan the customer's ID, check them against the credit bureau, sign the contract on a tablet and follow each application until it is approved or rejected.",
+    "answer": "Applicant onboarding and KYC: 130.0 hours. This component closely matches the requirement for scanning the customer's ID and identity verification against a credit bureau, making it the most relevant case.\nBack-office portal: 110.0 hours. This component deals with managing applications, which includes monitoring the process until approval or rejection, aligning well with operational needs requested in the brief.\nContract signing functionality: insufficient evidence. There is no direct comparable reference in the passages for signing contracts on a tablet. This specific functionality needs further information to provide an estimate of hours.\nApplication status tracking: insufficient evidence. No passages reference the capability to track application status. More information is required to provide an estimation for this aspect.",
+    "contexts": [
+      "{\"chunk_id\": \"BUD-2023-007::BACK-005\", \"document_id\": \"BUD-2023-007\", \"text\": \"[Project: Consumer loan origination platform with automated credit scoring and e-signature]\\n[Client sector: finance | Year: 2023 | Main tech: django]\\n\\nComponent: Back-office portal\\nDescription: Internal web app for credit analysts to review applications, override scores with a justification, and monitor the loan portfolio with basic dashboards.\\nTech stack: django, react, chartjs\\nComplexity: medium\\nEstimated hours: 110\"}",
+      "{\"chunk_id\": \"BUD-2023-007::ONB-001\", \"document_id\": \"BUD-2023-007\", \"text\": \"[Project: Consumer loan origination platform with automated credit scoring and e-signature]\\n[Client sector: finance | Year: 2023 | Main tech: django]\\n\\nComponent: Applicant onboarding and KYC\\nDescription: Multi-step web onboarding with identity document capture, liveness check through a third-party KYC provider and sanctions list screening before a loan application can be submitted.\\nTech stack: django, react, postgresql\\nComplexity: high\\nEstimated hours: 130\"}",
+      "{\"chunk_id\": \"BUD-2025-003::DASH-004\", \"document_id\": \"BUD-2025-003\", \"text\": \"[Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard]\\n[Client sector: finance | Year: 2025 | Main tech: spring_boot]\\n\\nComponent: Merchant dashboard\\nDescription: Web dashboard for merchants with transaction search, refunds, payout calendar and API key management, including role-based access for merchant staff.\\nTech stack: angular, typescript, spring_boot\\nComplexity: medium\\nEstimated hours: 100\"}",
+      "{\"chunk_id\": \"BUD-2025-003::WEBHOOK-005\", \"document_id\": \"BUD-2025-003\", \"text\": \"[Project: Payment gateway with card tokenisation, 3-D Secure and merchant dashboard]\\n[Client sector: finance | Year: 2025 | Main tech: spring_boot]\\n\\nComponent: Webhooks and merchant SDK\\nDescription: Signed webhook delivery with retries and a small JavaScript SDK for hosted payment fields so merchants never touch raw card data.\\nTech stack: spring_boot, typescript\\nComplexity: medium\\nEstimated hours: 60\"}",
+      "{\"chunk_id\": \"BUD-2024-014::PSD2-002\", \"document_id\": \"BUD-2024-014\", \"text\": \"[Project: Mobile banking API with OAuth 2.0 authentication and PSD2 compliance]\\n[Client sector: finance | Year: 2024 | Main tech: ruby_on_rails]\\n\\nComponent: PSD2 open banking connectors\\nDescription: Integration with the account information (AIS) and payment initiation (PIS) APIs of three Spanish banks, including consent management, strong customer authentication redirects and certificate rotation.\\nTech stack: ruby_on_rails, sidekiq, postgresql\\nComplexity: high\\nEstimated hours: 140\"}"
+    ],
+    "ground_truth": "Applicant onboarding and identity verification 130 h (ONB-001), credit bureau scoring 160 h (SCORE-002), electronic contract signature 90 h (CONTRACT-003), and branch back-office application tracking 110 h (BACK-005). The four historical benchmarks sum to 490 h.",
+    "result": {
+      "request_id": "4466e766-c0aa-4a12-83a0-61ab99f56406",
+      "model": "gpt-4o-mini-2024-07-18",
+      "structured": {
+        "items": [
+          {
+            "component": "Applicant onboarding and KYC",
+            "hours": 130.0,
+            "rationale": "This component closely matches the requirement for scanning the customer's ID and identity verification against a credit bureau, making it the most relevant case.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2023-007::ONB-001",
+                "document_id": "BUD-2023-007",
+                "evidence": "Component: Applicant onboarding and KYC"
+              },
+              {
+                "chunk_id": "BUD-2023-007::ONB-001",
+                "document_id": "BUD-2023-007",
+                "evidence": "Estimated hours: 130"
+              }
+            ]
+          },
+          {
+            "component": "Back-office portal",
+            "hours": 110.0,
+            "rationale": "This component deals with managing applications, which includes monitoring the process until approval or rejection, aligning well with operational needs requested in the brief.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2023-007::BACK-005",
+                "document_id": "BUD-2023-007",
+                "evidence": "Component: Back-office portal"
+              },
+              {
+                "chunk_id": "BUD-2023-007::BACK-005",
+                "document_id": "BUD-2023-007",
+                "evidence": "Estimated hours: 110"
+              }
+            ]
+          },
+          {
+            "component": "Contract signing functionality",
+            "hours": null,
+            "rationale": "There is no direct comparable reference in the passages for signing contracts on a tablet. This specific functionality needs further information to provide an estimate of hours.",
+            "grounded": false,
+            "sources": []
+          },
+          {
+            "component": "Application status tracking",
+            "hours": null,
+            "rationale": "No passages reference the capability to track application status. More information is required to provide an estimation for this aspect.",
+            "grounded": false,
+            "sources": []
+          }
+        ]
+      },
+      "citation_report": [
+        {
+          "component": "Applicant onboarding and KYC",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Back-office portal",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Contract signing functionality",
+          "status": "insufficient_context",
+          "issues": []
+        },
+        {
+          "component": "Application status tracking",
+          "status": "insufficient_context",
+          "issues": []
+        }
+      ],
+      "subtotal_hours": 240.0,
+      "complete": false
+    }
+  },
+  {
+    "id": "van-fleet-tracking",
+    "retrieval": "published_session10_config_D",
+    "question": "We run 300 delivery vans fitted with GPS trackers. We want a live map of the whole fleet, alerts when a van leaves its planned route or stops for too long, and a history of trips per vehicle for the fleet manager.",
+    "answer": "Live map for fleet tracking: 80.0 hours. This is comparable to the Customer tracking page and notifications, which involves live updates. However, the map specifically for the entire fleet is not directly covered.\nAlerts for route deviations and prolonged stops: insufficient evidence. There is no direct match in the passages for setting up alerts based on GPS data. This specific requirement for alerts is absent.\nTrip history per vehicle: insufficient evidence. The passages do not provide information about trip history tracking per vehicle. This specific deliverable is not addressed.\nRoute optimisation engine for 300 vehicles: 150.0 hours. The Route optimisation engine is for 120 vehicles, and scaling this to 300 might require additional time, but it is the closest comparable scope.",
+    "contexts": [
+      "{\"chunk_id\": \"BUD-2024-009::TRACK-003\", \"document_id\": \"BUD-2024-009\", \"text\": \"[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\\n\\nComponent: Customer tracking page and notifications\\nDescription: Public tracking page with live ETA from driver GPS, SMS and email notifications on departure and delivery, and rescheduling link.\\nTech stack: node_express, react, websockets, twilio\\nComplexity: medium\\nEstimated hours: 80\"}",
+      "{\"chunk_id\": \"BUD-2024-009::ROUTE-001\", \"document_id\": \"BUD-2024-009\", \"text\": \"[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\\n\\nComponent: Route optimisation engine\\nDescription: Daily route planning for 120 vehicles using a vehicle routing solver with time windows, capacities and driver shifts, with re-optimisation when orders arrive during the day.\\nTech stack: python, ortools, fastapi\\nComplexity: high\\nEstimated hours: 150\"}",
+      "{\"chunk_id\": \"BUD-2024-009::DRV-002\", \"document_id\": \"BUD-2024-009\", \"text\": \"[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\\n\\nComponent: Driver mobile app\\nDescription: Flutter app with stop list, navigation hand-off, proof of delivery with photo and signature, failed delivery reasons and offline queue.\\nTech stack: flutter, dart, node_express\\nComplexity: medium\\nEstimated hours: 130\"}",
+      "{\"chunk_id\": \"BUD-2024-009::BILL-005\", \"document_id\": \"BUD-2024-009\", \"text\": \"[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\\n\\nComponent: Shipper invoicing\\nDescription: Monthly invoicing per shipper from delivered stops with tariff tables by zone and weight, credit notes for failed deliveries and export to the accounting system.\\nTech stack: node_express, postgresql\\nComplexity: low\\nEstimated hours: 50\"}",
+      "{\"chunk_id\": \"BUD-2024-009::ORD-004\", \"document_id\": \"BUD-2024-009\", \"text\": \"[Project: Last-mile delivery platform with route optimisation, driver app and customer tracking]\\n[Client sector: logistics | Year: 2024 | Main tech: node_express]\\n\\nComponent: Order intake API and shipper portal\\nDescription: REST API and CSV upload for shippers to create delivery orders, address validation and geocoding, and a portal with delivery KPIs per shipper.\\nTech stack: node_express, postgresql, google_maps_api\\nComplexity: medium\\nEstimated hours: 90\"}"
+    ],
+    "ground_truth": "The historical fleet dashboard with map, live status and per-unit history is 100 h (FLEET-004). Alert rules and escalation are 90 h (ALERT-003), as an analogy for fleet alerts. Route-deviation and prolonged-stop detection are not priced separately in those items. GPS telemetry ingestion for vehicles needs scope confirmation; the 130 h (ING-001) reference is for refrigeration telemetry.",
+    "result": {
+      "request_id": "947adc47-2478-4eae-a86e-753e9f92e199",
+      "model": "gpt-4o-mini-2024-07-18",
+      "structured": {
+        "items": [
+          {
+            "component": "Live map for fleet tracking",
+            "hours": 80.0,
+            "rationale": "This is comparable to the Customer tracking page and notifications, which involves live updates. However, the map specifically for the entire fleet is not directly covered.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2024-009::TRACK-003",
+                "document_id": "BUD-2024-009",
+                "evidence": "Component: Customer tracking page and notifications"
+              },
+              {
+                "chunk_id": "BUD-2024-009::TRACK-003",
+                "document_id": "BUD-2024-009",
+                "evidence": "Estimated hours: 80"
+              }
+            ]
+          },
+          {
+            "component": "Alerts for route deviations and prolonged stops",
+            "hours": null,
+            "rationale": "There is no direct match in the passages for setting up alerts based on GPS data. This specific requirement for alerts is absent.",
+            "grounded": false,
+            "sources": []
+          },
+          {
+            "component": "Trip history per vehicle",
+            "hours": null,
+            "rationale": "The passages do not provide information about trip history tracking per vehicle. This specific deliverable is not addressed.",
+            "grounded": false,
+            "sources": []
+          },
+          {
+            "component": "Route optimisation engine for 300 vehicles",
+            "hours": 150.0,
+            "rationale": "The Route optimisation engine is for 120 vehicles, and scaling this to 300 might require additional time, but it is the closest comparable scope.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2024-009::ROUTE-001",
+                "document_id": "BUD-2024-009",
+                "evidence": "Component: Route optimisation engine"
+              },
+              {
+                "chunk_id": "BUD-2024-009::ROUTE-001",
+                "document_id": "BUD-2024-009",
+                "evidence": "Estimated hours: 150"
+              }
+            ]
+          }
+        ]
+      },
+      "citation_report": [
+        {
+          "component": "Live map for fleet tracking",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Alerts for route deviations and prolonged stops",
+          "status": "insufficient_context",
+          "issues": []
+        },
+        {
+          "component": "Trip history per vehicle",
+          "status": "insufficient_context",
+          "issues": []
+        },
+        {
+          "component": "Route optimisation engine for 300 vehicles",
+          "status": "grounded",
+          "issues": []
+        }
+      ],
+      "subtotal_hours": 230.0,
+      "complete": false
+    }
+  },
+  {
+    "id": "plant-oee-sap",
+    "retrieval": "published_session10_config_D",
+    "question": "Connect the 25 machines of our plant to a screen that shows OEE and downtime per shift, let the operators code the reason of every stop, and post the daily production figures to SAP automatically.",
+    "answer": "OEE and downtime dashboards: 110.0 hours. This component directly correlates with the need for OEE and downtime visibility per shift, including downtime reason coding by operators.\nShop-floor data acquisition: 200.0 hours. The detailed acquisition and streaming of machine data every second is essential for accurate OEE calculations and aligns with capturing operator-triggered downtime reasons.\nSAP PP confirmations: 60.0 hours. This component is necessary to automate the posting of daily production figures to SAP, as required in the brief.\nMaintenance requests: insufficient evidence. Insufficient verified evidence for this component.\nWork order execution: insufficient evidence. Insufficient verified evidence for this component.",
+    "contexts": [
+      "{\"chunk_id\": \"BUD-2024-030::OEE-004\", \"document_id\": \"BUD-2024-030\", \"text\": \"[Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards]\\n[Client sector: industrial | Year: 2024 | Main tech: dotnet]\\n\\nComponent: OEE and downtime dashboards\\nDescription: Availability, performance and quality calculation per machine and shift, downtime reason coding by operators and Grafana dashboards for plant managers.\\nTech stack: grafana, timescaledb, dotnet\\nComplexity: medium\\nEstimated hours: 110\"}",
+      "{\"chunk_id\": \"BUD-2024-030::PLC-001\", \"document_id\": \"BUD-2024-030\", \"text\": \"[Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards]\\n[Client sector: industrial | Year: 2024 | Main tech: dotnet]\\n\\nComponent: Shop-floor data acquisition\\nDescription: OPC UA and Modbus TCP collectors for 40 machines capturing counters, states and alarms every second into a time-series store, with buffering during network outages and a device health monitor. The collectors run on edge gateways in each production line, support hot configuration reload when a new machine is commissioned, expose Prometheus metrics for the IT team, and include a replay tool to re-ingest buffered data after an outage so that the OEE calculations downstream remain complete; the plant operates 24/7 in three shifts and any gap in the data invalidates the shift report, which is why this component carries most of the integration risk of the project.\\nTech stack: dotnet, csharp, opc_ua, timescaledb\\nComplexity: high\\nEstimated hours: 200\"}",
+      "{\"chunk_id\": \"BUD-2024-030::MAINT-005\", \"document_id\": \"BUD-2024-030\", \"text\": \"[Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards]\\n[Client sector: industrial | Year: 2024 | Main tech: dotnet]\\n\\nComponent: Maintenance requests\\nDescription: Operators raise maintenance requests from the terminal, maintenance team schedules interventions, and the system links downtime events to work done.\\nTech stack: dotnet, sql_server\\nComplexity: medium\\nEstimated hours: 90\"}",
+      "{\"chunk_id\": \"BUD-2024-030::WO-002\", \"document_id\": \"BUD-2024-030\", \"text\": \"[Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards]\\n[Client sector: industrial | Year: 2024 | Main tech: dotnet]\\n\\nComponent: Work order execution\\nDescription: Download of production orders from SAP, operator terminal to start, pause and complete operations, material consumption and traceability of heats and coils.\\nTech stack: dotnet, blazor, sql_server\\nComplexity: high\\nEstimated hours: 180\"}",
+      "{\"chunk_id\": \"BUD-2024-030::SAP-006\", \"document_id\": \"BUD-2024-030\", \"text\": \"[Project: Manufacturing execution system (MES) for a steel plant with shop-floor data capture and OEE dashboards]\\n[Client sector: industrial | Year: 2024 | Main tech: dotnet]\\n\\nComponent: SAP PP confirmations\\nDescription: Posting of production confirmations, scrap and goods movements back to SAP PP through IDocs with error queue and manual reprocessing screen.\\nTech stack: dotnet, sap_idoc, rabbitmq\\nComplexity: high\\nEstimated hours: 60\"}"
+    ],
+    "ground_truth": "Machine data collection via OPC UA and Modbus is 200 h (PLC-001 for 40 machines). The OEE dashboard by machine and shift, including operator downtime reason coding, is 110 h (OEE-004). SAP PP production confirmations via IDocs are 60 h (SAP-006). Reference subtotal 370 h; scaling down to 25 machines requires confirmation.",
+    "result": {
+      "request_id": "5821a3e9-b8eb-4d41-9496-faf94b6716e4",
+      "model": "gpt-4o-mini-2024-07-18",
+      "structured": {
+        "items": [
+          {
+            "component": "OEE and downtime dashboards",
+            "hours": 110.0,
+            "rationale": "This component directly correlates with the need for OEE and downtime visibility per shift, including downtime reason coding by operators.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2024-030::OEE-004",
+                "document_id": "BUD-2024-030",
+                "evidence": "Component: OEE and downtime dashboards"
+              },
+              {
+                "chunk_id": "BUD-2024-030::OEE-004",
+                "document_id": "BUD-2024-030",
+                "evidence": "Estimated hours: 110"
+              }
+            ]
+          },
+          {
+            "component": "Shop-floor data acquisition",
+            "hours": 200.0,
+            "rationale": "The detailed acquisition and streaming of machine data every second is essential for accurate OEE calculations and aligns with capturing operator-triggered downtime reasons.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2024-030::PLC-001",
+                "document_id": "BUD-2024-030",
+                "evidence": "Component: Shop-floor data acquisition"
+              },
+              {
+                "chunk_id": "BUD-2024-030::PLC-001",
+                "document_id": "BUD-2024-030",
+                "evidence": "Estimated hours: 200"
+              }
+            ]
+          },
+          {
+            "component": "SAP PP confirmations",
+            "hours": 60.0,
+            "rationale": "This component is necessary to automate the posting of daily production figures to SAP, as required in the brief.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2024-030::SAP-006",
+                "document_id": "BUD-2024-030",
+                "evidence": "Component: SAP PP confirmations"
+              },
+              {
+                "chunk_id": "BUD-2024-030::SAP-006",
+                "document_id": "BUD-2024-030",
+                "evidence": "Estimated hours: 60"
+              }
+            ]
+          },
+          {
+            "component": "Maintenance requests",
+            "hours": null,
+            "rationale": "Insufficient verified evidence for this component.",
+            "grounded": false,
+            "sources": []
+          },
+          {
+            "component": "Work order execution",
+            "hours": null,
+            "rationale": "Insufficient verified evidence for this component.",
+            "grounded": false,
+            "sources": []
+          }
+        ]
+      },
+      "citation_report": [
+        {
+          "component": "OEE and downtime dashboards",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Shop-floor data acquisition",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "SAP PP confirmations",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Maintenance requests",
+          "status": "invalid_evidence",
+          "issues": [
+            "An ungrounded line must have null hours and no sources."
+          ]
+        },
+        {
+          "component": "Work order execution",
+          "status": "invalid_evidence",
+          "issues": [
+            "An ungrounded line must have null hours and no sources."
+          ]
+        }
+      ],
+      "subtotal_hours": 370.0,
+      "complete": false
+    }
+  },
+  {
+    "id": "insurance-customer-portal",
+    "retrieval": "published_session10_config_D",
+    "question": "Customer portal for an insurance broker: clients log in, download their policies and invoices, sign renewal documents electronically and get an SMS when a new document is available.",
+    "answer": "Customer portal: 90.0 hours. This component aligns closely with the patient portal from the dental clinic, where users log in to download documents and sign forms, similar to the requirements for clients to download policies and invoices.\nSMS notification for new documents: 100.0 hours. This feature matches the SMS notifications for report releases in the patient and physician results portal, fulfilling the requirement to inform clients about available new documents.\nSign renewal documents electronically: insufficient evidence. There is no specific comparable component in the provided passages for the electronic signature of renewal documents; therefore, the hours remain unassigned.\nDownload policies and invoices: insufficient evidence. The passages do not contain a direct match for downloading policies and invoices apart from the mentioned document download capabilities; therefore, the hours are not assigned.\nClient login functionality: insufficient evidence. While user login is a common feature, there are no specific details regarding its implementation in the provided passages; thus, hours are not assigned.",
+    "contexts": [
+      "{\"chunk_id\": \"BUD-2024-002::PORTAL-003\", \"document_id\": \"BUD-2024-002\", \"text\": \"[Project: Appointment booking and patient portal for a dental clinic network with reminders]\\n[Client sector: healthcare | Year: 2024 | Main tech: fastapi]\\n\\nComponent: Patient portal\\nDescription: Patients log in to see upcoming visits, treatment plans, invoices and radiographs, with document download and consent form signature.\\nTech stack: react, fastapi, postgresql\\nComplexity: medium\\nEstimated hours: 90\"}",
+      "{\"chunk_id\": \"BUD-2025-011::BILL-004\", \"document_id\": \"BUD-2025-011\", \"text\": \"[Project: Laboratory results portal and HL7 integration with analyser instruments]\\n[Client sector: healthcare | Year: 2025 | Main tech: spring_boot]\\n\\nComponent: Insurance billing export\\nDescription: Monthly billing files per insurer with the tests performed, price lists and rejected-claim handling, exported in the formats each insurer requires.\\nTech stack: spring_boot, postgresql\\nComplexity: low\\nEstimated hours: 50\"}",
+      "{\"chunk_id\": \"BUD-2023-016::SCHED-004\", \"document_id\": \"BUD-2023-016\", \"text\": \"[Project: Telemedicine platform with video consultations, e-prescriptions and GDPR-compliant medical records]\\n[Client sector: healthcare | Year: 2023 | Main tech: dotnet]\\n\\nComponent: Physician scheduling and billing\\nDescription: Physician availability calendar, patient booking, insurance coverage check and invoicing with automatic reimbursement claims.\\nTech stack: dotnet, angular, sql_server\\nComplexity: medium\\nEstimated hours: 130\"}",
+      "{\"chunk_id\": \"BUD-2025-011::PORTAL-003\", \"document_id\": \"BUD-2025-011\", \"text\": \"[Project: Laboratory results portal and HL7 integration with analyser instruments]\\n[Client sector: healthcare | Year: 2025 | Main tech: spring_boot]\\n\\nComponent: Patient and physician results portal\\nDescription: Secure portal where patients download PDF reports and physicians see cumulative result charts, with SMS notification when a report is released.\\nTech stack: react, spring_boot, twilio\\nComplexity: medium\\nEstimated hours: 100\"}",
+      "{\"chunk_id\": \"BUD-2023-016::RX-003\", \"document_id\": \"BUD-2023-016\", \"text\": \"[Project: Telemedicine platform with video consultations, e-prescriptions and GDPR-compliant medical records]\\n[Client sector: healthcare | Year: 2023 | Main tech: dotnet]\\n\\nComponent: Electronic prescriptions\\nDescription: Prescription drafting with drug interaction warnings, digital signature by the physician and transmission to the national e-prescription service.\\nTech stack: dotnet, csharp, sql_server\\nComplexity: high\\nEstimated hours: 120\"}"
+    ],
+    "ground_truth": "A comparable authenticated portal with invoice download and consent signature is 90 h (BUD-2024-002 PORTAL-003). Another secure PDF portal with SMS on release is 100 h (BUD-2025-011 PORTAL-003). These alternatives overlap. Insurance policy renewals and their signature requirements need confirmation. There is no separately verified full-project total.",
+    "result": {
+      "request_id": "c0b19283-3665-4d71-8430-f762ff635a0f",
+      "model": "gpt-4o-mini-2024-07-18",
+      "structured": {
+        "items": [
+          {
+            "component": "Customer portal",
+            "hours": 90.0,
+            "rationale": "This component aligns closely with the patient portal from the dental clinic, where users log in to download documents and sign forms, similar to the requirements for clients to download policies and invoices.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2024-002::PORTAL-003",
+                "document_id": "BUD-2024-002",
+                "evidence": "Component: Patient portal"
+              },
+              {
+                "chunk_id": "BUD-2024-002::PORTAL-003",
+                "document_id": "BUD-2024-002",
+                "evidence": "Estimated hours: 90"
+              }
+            ]
+          },
+          {
+            "component": "SMS notification for new documents",
+            "hours": 100.0,
+            "rationale": "This feature matches the SMS notifications for report releases in the patient and physician results portal, fulfilling the requirement to inform clients about available new documents.",
+            "grounded": true,
+            "sources": [
+              {
+                "chunk_id": "BUD-2025-011::PORTAL-003",
+                "document_id": "BUD-2025-011",
+                "evidence": "Component: Patient and physician results portal"
+              },
+              {
+                "chunk_id": "BUD-2025-011::PORTAL-003",
+                "document_id": "BUD-2025-011",
+                "evidence": "Estimated hours: 100"
+              }
+            ]
+          },
+          {
+            "component": "Sign renewal documents electronically",
+            "hours": null,
+            "rationale": "There is no specific comparable component in the provided passages for the electronic signature of renewal documents; therefore, the hours remain unassigned.",
+            "grounded": false,
+            "sources": []
+          },
+          {
+            "component": "Download policies and invoices",
+            "hours": null,
+            "rationale": "The passages do not contain a direct match for downloading policies and invoices apart from the mentioned document download capabilities; therefore, the hours are not assigned.",
+            "grounded": false,
+            "sources": []
+          },
+          {
+            "component": "Client login functionality",
+            "hours": null,
+            "rationale": "While user login is a common feature, there are no specific details regarding its implementation in the provided passages; thus, hours are not assigned.",
+            "grounded": false,
+            "sources": []
+          }
+        ]
+      },
+      "citation_report": [
+        {
+          "component": "Customer portal",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "SMS notification for new documents",
+          "status": "grounded",
+          "issues": []
+        },
+        {
+          "component": "Sign renewal documents electronically",
+          "status": "insufficient_context",
+          "issues": []
+        },
+        {
+          "component": "Download policies and invoices",
+          "status": "insufficient_context",
+          "issues": []
+        },
+        {
+          "component": "Client login functionality",
+          "status": "insufficient_context",
+          "issues": []
+        }
+      ],
+      "subtotal_hours": 190.0,
+      "complete": false
+    }
+  }
+]
