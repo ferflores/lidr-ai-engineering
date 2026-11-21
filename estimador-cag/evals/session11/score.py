@@ -50,7 +50,7 @@ async def score(args):
         raise ValueError("Expected a nonempty sample file with unique query IDs.")
     rows = []
     async with AsyncOpenAI() as client:
-        judge = llm_factory(args.judge, client=client, temperature=0)
+        judge = llm_factory(args.judge, client=client, temperature=0, max_tokens=8192)
         embeddings = OpenAIEmbeddings(model=EMBEDDINGS, client=client)
         fidelity, relevance = Faithfulness(llm=judge), AnswerRelevancy(llm=judge, embeddings=embeddings)
         precision, recall = ContextPrecision(llm=judge), ContextRecall(llm=judge)

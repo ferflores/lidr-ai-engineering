@@ -1,0 +1,53 @@
+{
+  "completed_at": "2026-11-21T12:49:52.374795+00:00",
+  "ragas": "0.4.4",
+  "judge": "gpt-4.1-mini-2025-04-14",
+  "embedding_model": "text-embedding-3-small",
+  "generator_models": [
+    "gpt-4o-mini-2024-07-18"
+  ],
+  "sample_sha256": "d10eaf55b879921d10fcd32bf3c982b1b6b13c4ffcc7746e11be33615f81296e",
+  "rows": [
+    {
+      "id": "pharmacy-online-orders",
+      "faithfulness": 0.4444444444444444,
+      "answer_relevancy": 0.41447674592540396,
+      "context_precision": 0.0,
+      "context_recall": 1.0
+    },
+    {
+      "id": "credit-card-onboarding-tool",
+      "faithfulness": 0.7857142857142857,
+      "answer_relevancy": 0.3927620362749195,
+      "context_precision": 0.0,
+      "context_recall": 0.4
+    },
+    {
+      "id": "van-fleet-tracking",
+      "faithfulness": 0.8461538461538461,
+      "answer_relevancy": 0.6725076066447259,
+      "context_precision": 0.0,
+      "context_recall": 0.0
+    },
+    {
+      "id": "plant-oee-sap",
+      "faithfulness": 0.5454545454545454,
+      "answer_relevancy": 0.5603410898165361,
+      "context_precision": 0.99999999995,
+      "context_recall": 0.75
+    },
+    {
+      "id": "insurance-customer-portal",
+      "faithfulness": 0.8235294117647058,
+      "answer_relevancy": 0.5993272477635587,
+      "context_precision": 0.249999999975,
+      "context_recall": 0.8
+    }
+  ],
+  "mean": {
+    "faithfulness": 0.6890593067063655,
+    "answer_relevancy": 0.5278829452850289,
+    "context_precision": 0.249999999985,
+    "context_recall": 0.59
+  }
+}
